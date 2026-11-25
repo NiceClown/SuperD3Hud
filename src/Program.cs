@@ -1101,17 +1101,20 @@ namespace SuperD3Hud
                 actors.SpecialArea = 2; // Greater Rift
                 actors.RiftPercentage = 76.4;
                 actors.DamageActive = true;
-                actors.DamageTotal = 18426500d;
-                actors.DamageDps = 1243000d;
+                actors.DamageTotal = 1842650000000d;
+                actors.DamageDps = 214300000000d;
+                actors.DamagePeakDps = 342100000000d;
                 Game.DamageEntry own = new Game.DamageEntry();
                 own.Name = Game.DamageTracker.LocalPlayerName;
-                own.Damage = 12900000d;
+                own.Damage = 1290000000000d;
+                own.Dps = 150000000000d;
                 own.Share = 0.70;
                 own.IsLocalPlayer = true;
                 actors.DamageEntries.Add(own);
                 Game.DamageEntry mate = new Game.DamageEntry();
                 mate.Name = "Союзник 1";
-                mate.Damage = 5526500d;
+                mate.Damage = 552650000000d;
+                mate.Dps = 64300000000d;
                 mate.Share = 0.30;
                 actors.DamageEntries.Add(mate);
 
@@ -1741,6 +1744,64 @@ namespace SuperD3Hud
                 line(rejected ? "PASS  invalid cooldown rejected" : "FAIL  invalid cooldown accepted");
                 if (!rejected) failures++;
 
+                // CooldownReader: legacy migration (594/595 -> 362/363), ready sentinel (-1), active ticks, charges, potion.
+                Game.CooldownReader cdReader = new Game.CooldownReader();
+                cdReader.Restore(594, 595);
+                bool migratedDesc = cdReader.DurationDescriptor == Game.AttributeKeys.PowerCooldownDescriptor
+                    && cdReader.StartDescriptor == Game.AttributeKeys.PowerCooldownStartDescriptor;
+                line(migratedDesc ? "PASS  legacy cooldown descriptor 594/595 migrated to 362/363"
+                                  : "FAIL  legacy cooldown descriptor not migrated");
+                if (!migratedDesc) failures++;
+
+                Game.GameReader.EquippedSkill[] mockEq = new Game.GameReader.EquippedSkill[6];
+                mockEq[0].PowerSno = 77552;
+                mockEq[5].PowerSno = 302846;
+                mockEq[2].PowerSno = 129217; // sentry (charge skill test)
+                int mockTick = 100000;
+                List<KeyValuePair<uint, uint>> mockAttrs = new List<KeyValuePair<uint, uint>>();
+                // Slot 0 ready sentinel (-1 / int.MaxValue)
+                mockAttrs.Add(new KeyValuePair<uint, uint>(
+                    Game.AttributeKeys.MakeKey(77552, (uint)Game.AttributeKeys.PowerCooldownDescriptor),
+                    unchecked((uint)-1)));
+                mockAttrs.Add(new KeyValuePair<uint, uint>(
+                    Game.AttributeKeys.MakeKey(77552, (uint)Game.AttributeKeys.PowerCooldownStartDescriptor),
+                    (uint)int.MaxValue));
+                // Slot 5 active cooldown: +600 ticks (10s left of 11s total)
+                mockAttrs.Add(new KeyValuePair<uint, uint>(
+                    Game.AttributeKeys.MakeKey(302846, (uint)Game.AttributeKeys.PowerCooldownDescriptor),
+                    (uint)(mockTick + 600)));
+                mockAttrs.Add(new KeyValuePair<uint, uint>(
+                    Game.AttributeKeys.MakeKey(302846, (uint)Game.AttributeKeys.PowerCooldownStartDescriptor),
+                    (uint)(mockTick - 60)));
+                // Slot 2 charge-based recharge: 0 charges, next charge in +300 ticks (5s left of 8s)
+                mockAttrs.Add(new KeyValuePair<uint, uint>(
+                    Game.AttributeKeys.MakeKey(129217, (uint)Game.AttributeKeys.SkillChargesDescriptor), 0u));
+                mockAttrs.Add(new KeyValuePair<uint, uint>(
+                    Game.AttributeKeys.MakeKey(129217, (uint)Game.AttributeKeys.NextChargeGainedDescriptor),
+                    (uint)(mockTick + 300)));
+                mockAttrs.Add(new KeyValuePair<uint, uint>(
+                    Game.AttributeKeys.MakeKey(129217, (uint)Game.AttributeKeys.RechargeStartDescriptor),
+                    (uint)(mockTick - 180)));
+                // Health potion (slot 6): +900 ticks (15s left of 30s)
+                mockAttrs.Add(new KeyValuePair<uint, uint>(
+                    Game.AttributeKeys.MakeKey(Game.AttributeKeys.HealthPotionPowerSno, (uint)Game.AttributeKeys.PowerCooldownDescriptor),
+                    (uint)(mockTick + 900)));
+                mockAttrs.Add(new KeyValuePair<uint, uint>(
+                    Game.AttributeKeys.MakeKey(Game.AttributeKeys.HealthPotionPowerSno, (uint)Game.AttributeKeys.PowerCooldownStartDescriptor),
+                    (uint)(mockTick - 900)));
+
+                cdReader.PollAttributes(mockAttrs, mockTick, mockEq);
+                Dictionary<int, double> remSlots = cdReader.RemainingBySlot();
+                Dictionary<int, double> durSlots = cdReader.DurationBySlot();
+                bool cdOk = !remSlots.ContainsKey(0)
+                    && remSlots.ContainsKey(5) && Math.Abs(remSlots[5] - 10.0) < 0.01
+                    && durSlots.ContainsKey(5) && Math.Abs(durSlots[5] - 11.0) < 0.01
+                    && remSlots.ContainsKey(2) && Math.Abs(remSlots[2] - 5.0) < 0.01
+                    && remSlots.ContainsKey(6) && Math.Abs(remSlots[6] - 15.0) < 0.01;
+                line(cdOk ? "PASS  cooldown reader decodes 0x16A ticks, sentinels, charges, and potion"
+                          : "FAIL  cooldown reader decoding");
+                if (!cdOk) failures++;
+
                 line(Game.BuffPowers.NameOf(430674) == "Convention of Elements"
                     ? "PASS  known buff power has a name"
                     : "FAIL  known buff power name");
@@ -1793,6 +1854,32 @@ namespace SuperD3Hud
                 bool off = !tracker.Active && tracker.Total == 0;
                 line(off ? "PASS  damage meter resets in a new area" : "FAIL  damage meter reset");
                 if (!off) failures++;
+
+                // One-shot kill within combat range counts full HP; far despawn adds 0; DPS uses elapsed window >= 1s.
+                Game.MonsterMarker nearMob = new Game.MonsterMarker { Id = 10, Health = 500000f, X = 25f, Y = 0f };
+                Game.MonsterMarker farMob = new Game.MonsterMarker { Id = 11, Health = 900000f, X = 150f, Y = 0f };
+                wave = new List<Game.MonsterMarker> { nearMob, farMob };
+                tracker.Update(wave, 7, true, 0f, 0f, null);
+                tracker.Update(new List<Game.MonsterMarker>(), 7, true, 0f, 0f, null);
+                bool oneShotOk = Math.Abs(tracker.Total - 500000d) < 1d && tracker.Dps > 400000d;
+                line(oneShotOk ? "PASS  damage meter counts near one-shot kills, ignores far despawns, accurate initial DPS"
+                               : "FAIL  damage meter one-shot/DPS: total=" + tracker.Total + " dps=" + tracker.Dps);
+                if (!oneShotOk) failures++;
+
+                // Healing does not wipe prior tracked damage on a monster.
+                Game.MonsterMarker healMob = new Game.MonsterMarker { Id = 12, Health = 1000f, MaxHealth = 1000f, X = 10f, Y = 0f };
+                tracker.Update(new List<Game.MonsterMarker> { healMob }, 8, true, 0f, 0f, null);
+                healMob.Health = 600f;
+                tracker.Update(new List<Game.MonsterMarker> { healMob }, 8, true, 0f, 0f, null);
+                healMob.Health = 800f; // healed +200
+                tracker.Update(new List<Game.MonsterMarker> { healMob }, 8, true, 0f, 0f, null);
+                healMob.Health = 500f; // damaged +300
+                tracker.Update(new List<Game.MonsterMarker> { healMob }, 8, true, 0f, 0f, null);
+                tracker.Update(new List<Game.MonsterMarker>(), 8, true, 0f, 0f, null); // killed +500 => total 1200
+                bool healOk = Math.Abs(tracker.Total - 1200d) < 1d;
+                line(healOk ? "PASS  damage meter preserves prior damage across monster heals"
+                            : "FAIL  damage meter heal total: " + tracker.Total);
+                if (!healOk) failures++;
 
                 // HUD settings survive a save/load round-trip.
                 string hudIniPath = Path.Combine(AppPaths.ConfigDir, "selftest-hud.ini");

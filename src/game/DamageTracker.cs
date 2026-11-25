@@ -8,6 +8,7 @@ namespace SuperD3Hud.Game
     {
         public string Name = "";
         public double Damage;
+        public double Dps;
         /// <summary>Share of the total damage, 0..1.</summary>
         public double Share;
         public bool IsLocalPlayer;
@@ -42,6 +43,7 @@ namespace SuperD3Hud.Game
         {
             public DateTime At;
             public double Damage;
+            public string Source = "";
         }
 
         /// <summary>How long a hit counts towards the damage per second.</summary>
@@ -52,7 +54,14 @@ namespace SuperD3Hud.Game
         /// does not say whether the player is in a rift, so the meter shows
         /// itself while there is something to show and hides again.
         /// </summary>
-        public const double RecentSeconds = 8.0;
+        public const double RecentSeconds = 12.0;
+
+        /// <summary>Idle gap after which a fresh combat encounter resets counters.</summary>
+        public const double IdleResetSeconds = 20.0;
+
+        /// <summary>Monsters dying within this distance count even if one-shot between polls.</summary>
+        public const float MaxOneShotRange = 65.0f;
+        private const float MaxOneShotRangeSq = MaxOneShotRange * MaxOneShotRange;
 
         private readonly Dictionary<int, MonsterState> _monsters = new Dictionary<int, MonsterState>();
         private readonly Dictionary<string, double> _damage = new Dictionary<string, double>();
@@ -61,6 +70,7 @@ namespace SuperD3Hud.Game
 
         private int _worldId;
         private double _total;
+        private double _peakDps;
         private DateTime _lastHit = DateTime.MinValue;
         private float _playerX;
         private float _playerY;
@@ -82,19 +92,17 @@ namespace SuperD3Hud.Game
         /// <summary>The total damage of the group.</summary>
         public double Total { get { return _total; } }
 
+        /// <summary>Highest rolling DPS reached in the current encounter.</summary>
+        public double PeakDps { get { return _peakDps; } }
+
         /// <summary>The damage of the last <see cref="DpsWindowSeconds"/> seconds per second.</summary>
         public double Dps
         {
             get
             {
-                double sum = 0;
                 DateTime now = DateTime.UtcNow;
-                for (int i = _hits.Count - 1; i >= 0; i--)
-                {
-                    if ((now - _hits[i].At).TotalSeconds > DpsWindowSeconds) break;
-                    sum += _hits[i].Damage;
-                }
-                return sum / DpsWindowSeconds;
+                double elapsed;
+                return ComputeWindowTotal(now, out elapsed) / elapsed;
             }
         }
 
@@ -120,8 +128,8 @@ namespace SuperD3Hud.Game
             _playerY = playerY;
             _party = party;
 
-            // The health of every monster of the previous read.
-            var seen = new HashSet<int>();
+            // Track health changes of every living monster.
+            HashSet<int> seen = new HashSet<int>();
             if (monsters != null)
             {
                 for (int i = 0; i < monsters.Count; i++)
@@ -131,21 +139,15 @@ namespace SuperD3Hud.Game
                     seen.Add(monster.Id);
 
                     MonsterState state;
-                    if (!_monsters.TryGetValue(monster.Id, out state))
+                    if (!_monsters.TryGetValue(monster.Id, out state) || !state.Seen)
                     {
-                        state = new MonsterState();
-                        state.MaxHealth = monster.Health;
-                        _monsters[monster.Id] = state;
-                    }
-
-                    if (monster.Health > state.Health)
-                    {
-                        // The health grew: the monster healed, a shield took
-                        // the hit, or the id belongs to a new monster. In all
-                        // three cases the old numbers are useless, so the
-                        // monster starts over.
+                        if (state == null)
+                        {
+                            state = new MonsterState();
+                            _monsters[monster.Id] = state;
+                        }
                         state.Health = monster.Health;
-                        state.MaxHealth = monster.Health;
+                        state.MaxHealth = monster.MaxHealth > monster.Health ? monster.MaxHealth : monster.Health;
                         state.Damage = 0;
                         state.Falling = false;
                         state.X = monster.X;
@@ -154,12 +156,21 @@ namespace SuperD3Hud.Game
                         continue;
                     }
 
+                    if (monster.Health > state.Health)
+                    {
+                        // Monster healed or shielded up: expand MaxHealth ceiling without erasing prior damage.
+                        state.Health = monster.Health;
+                        double neededCeiling = state.Damage + monster.Health;
+                        if (neededCeiling > state.MaxHealth)
+                            state.MaxHealth = (float)neededCeiling;
+                        state.X = monster.X;
+                        state.Y = monster.Y;
+                        continue;
+                    }
+
                     if (state.Health > monster.Health && state.Health > 0)
                     {
-                        // A monster can not take more damage than it has
-                        // health, so a bigger drop is a bad reading and is
-                        // ignored.
-                        double room = state.MaxHealth - state.Damage;
+                        double room = Math.Max((double)state.Health, (double)state.MaxHealth - state.Damage);
                         double damage = Math.Min(state.Health - monster.Health, room);
                         if (damage > 0)
                         {
@@ -167,10 +178,6 @@ namespace SuperD3Hud.Game
                             state.Falling = true;
                             AddDamage(now, damage, monster.X, monster.Y);
                         }
-                    }
-                    else if (monster.Health < state.Health)
-                    {
-                        state.Falling = false;
                     }
 
                     state.Health = monster.Health;
@@ -180,8 +187,9 @@ namespace SuperD3Hud.Game
                 }
             }
 
-            // A monster that is gone died: its last health was the damage.
-            var gone = new List<int>();
+            // A monster that disappeared either was killed (damaged or within combat range, e.g. one-shot)
+            // or despawned far outside actor range.
+            List<int> gone = new List<int>();
             foreach (KeyValuePair<int, MonsterState> pair in _monsters)
             {
                 if (pair.Value.Seen && !seen.Contains(pair.Key) && pair.Value.Health > 0)
@@ -190,12 +198,10 @@ namespace SuperD3Hud.Game
             for (int i = 0; i < gone.Count; i++)
             {
                 MonsterState state = _monsters[gone[i]];
-                // The monster is gone: it died with the health it still had.
-                // Only a monster that was really losing health counts, so one
-                // that ran away does not add a phantom hit.
-                if (state.Falling)
+                bool inCombatRange = MinDistanceToPartySq(state.X, state.Y) <= MaxOneShotRangeSq;
+                if (state.Falling || (inCombatRange && state.Health >= 10f))
                 {
-                    double room = state.MaxHealth - state.Damage;
+                    double room = Math.Max((double)state.Health, (double)state.MaxHealth - state.Damage);
                     double damage = Math.Min(Math.Max(0, state.Health), room);
                     if (damage > 0)
                     {
@@ -211,12 +217,21 @@ namespace SuperD3Hud.Game
                 if ((now - _hits[i].At).TotalSeconds > DpsWindowSeconds * 2) _hits.RemoveAt(i);
             }
 
-            BuildEntries();
+            BuildEntries(now);
         }
 
         private void AddDamage(DateTime now, double damage, float x, float y)
         {
             if (damage <= 0) return;
+
+            if (_lastHit != DateTime.MinValue && (now - _lastHit).TotalSeconds > IdleResetSeconds)
+            {
+                _damage.Clear();
+                _hits.Clear();
+                _entries.Clear();
+                _total = 0;
+                _peakDps = 0;
+            }
 
             string source = FindSource(x, y);
             double value;
@@ -227,7 +242,49 @@ namespace SuperD3Hud.Game
             Hit hit = new Hit();
             hit.At = now;
             hit.Damage = damage;
+            hit.Source = source;
             _hits.Add(hit);
+        }
+
+        private double ComputeWindowTotal(DateTime now, out double elapsedSeconds)
+        {
+            double sum = 0.0;
+            DateTime oldest = DateTime.MaxValue;
+            for (int i = _hits.Count - 1; i >= 0; i--)
+            {
+                double age = (now - _hits[i].At).TotalSeconds;
+                if (age > DpsWindowSeconds) break;
+                sum += _hits[i].Damage;
+                if (_hits[i].At < oldest) oldest = _hits[i].At;
+            }
+
+            if (oldest == DateTime.MaxValue)
+            {
+                elapsedSeconds = 1.0;
+                return 0.0;
+            }
+
+            double span = (now - oldest).TotalSeconds;
+            if (span < 1.0) span = 1.0;
+            if (span > DpsWindowSeconds) span = DpsWindowSeconds;
+            elapsedSeconds = span;
+            return sum;
+        }
+
+        private float MinDistanceToPartySq(float x, float y)
+        {
+            float best = DistanceSquared(_playerX, _playerY, x, y);
+            if (_party != null)
+            {
+                for (int i = 0; i < _party.Count; i++)
+                {
+                    PartyMember member = _party[i];
+                    if (member == null) continue;
+                    float d = DistanceSquared(member.X, member.Y, x, y);
+                    if (d < best) best = d;
+                }
+            }
+            return best;
         }
 
         /// <summary>
@@ -266,17 +323,35 @@ namespace SuperD3Hud.Game
         /// <summary>The name of the local player on the meter.</summary>
         public const string LocalPlayerName = "Вы";
 
-        private void BuildEntries()
+        private void BuildEntries(DateTime now)
         {
             _entries.Clear();
             _total = 0;
             if (_damage.Count == 0) return;
+
+            double elapsed;
+            double windowSum = ComputeWindowTotal(now, out elapsed);
+            double totalDps = windowSum / elapsed;
+            if (totalDps > _peakDps) _peakDps = totalDps;
+
+            Dictionary<string, double> windowBySource = new Dictionary<string, double>();
+            for (int i = _hits.Count - 1; i >= 0; i--)
+            {
+                if ((now - _hits[i].At).TotalSeconds > DpsWindowSeconds) break;
+                string src = _hits[i].Source ?? "";
+                double cur;
+                windowBySource.TryGetValue(src, out cur);
+                windowBySource[src] = cur + _hits[i].Damage;
+            }
 
             foreach (KeyValuePair<string, double> pair in _damage)
             {
                 DamageEntry entry = new DamageEntry();
                 entry.Name = pair.Key;
                 entry.Damage = pair.Value;
+                double srcWindow;
+                windowBySource.TryGetValue(pair.Key, out srcWindow);
+                entry.Dps = srcWindow / elapsed;
                 entry.IsLocalPlayer = pair.Key == LocalPlayerName;
                 _entries.Add(entry);
                 _total += pair.Value;
@@ -292,6 +367,7 @@ namespace SuperD3Hud.Game
                 DamageEntry own = new DamageEntry();
                 own.Name = LocalPlayerName;
                 own.Damage = 0;
+                own.Dps = 0;
                 own.IsLocalPlayer = true;
                 _entries.Add(own);
             }
@@ -315,6 +391,7 @@ namespace SuperD3Hud.Game
             _hits.Clear();
             _entries.Clear();
             _total = 0;
+            _peakDps = 0;
             _lastHit = DateTime.MinValue;
         }
     }

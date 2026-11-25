@@ -334,6 +334,13 @@ namespace SuperD3Hud.Game
             catch { return new Dictionary<int, int>(); }
         }
 
+        /// <summary>Skill charges per slot, read from memory.</summary>
+        public Dictionary<int, int> SkillCharges()
+        {
+            try { return _cooldowns.ChargesBySlot(); }
+            catch { return new Dictionary<int, int>(); }
+        }
+
         /// <summary>Current internal game tick counter (60 ticks/second).</summary>
         public int GameTick
         {

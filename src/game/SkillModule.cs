@@ -108,8 +108,7 @@ namespace SuperD3Hud.Game
 
                 if (seconds <= 0.0)
                 {
-                    // Fallback duration for action bar skills 1..4 (slots 2..5)
-                    state.DurationSeconds = (slot == 5 ? 30.0 : (slot == 4 ? 10.0 : (slot >= 2 ? 8.0 : 0.0)));
+                    state.DurationSeconds = 0.0;
                     state.Running = false;
                     state.StartDurationSeconds = 0.0;
                     state.StartedUtc = DateTime.MinValue;
@@ -181,11 +180,6 @@ namespace SuperD3Hud.Game
 
                 SlotState state = _slots[slot];
                 double duration = state.DurationSeconds;
-                if (duration <= 0.0 && slot >= 2)
-                {
-                    duration = (slot == 5 ? 30.0 : (slot == 4 ? 10.0 : 8.0));
-                    state.DurationSeconds = duration;
-                }
                 if (duration <= 0.0) return;
 
                 DateTime now = DateTime.UtcNow;
@@ -299,10 +293,14 @@ namespace SuperD3Hud.Game
                     }
                 }
                 snapshot.HealthMax = -1.0;
+                snapshot.PrimaryResourceType = -1;
                 snapshot.PrimaryResource = -1.0;
                 snapshot.PrimaryResourceMax = -1.0;
+                snapshot.PrimaryResourceRegen = 0.0;
+                snapshot.SecondaryResourceType = -1;
                 snapshot.SecondaryResource = -1.0;
                 snapshot.SecondaryResourceMax = -1.0;
+                snapshot.SecondaryResourceRegen = 0.0;
 
                 // localPlayerSlot is accepted for interface symmetry; the
                 // health source is the actor record, which is validated here.
@@ -320,7 +318,20 @@ namespace SuperD3Hud.Game
                     return snapshot;
                 }
 
-                float? health = reader.ReadHealth(me.GroupId);
+                snapshot.PlayerSno = me.Sno;
+
+                GameAttributeTable attrTable = reader.OpenAttributes();
+                uint[] baseKeys = new uint[]
+                {
+                    AttributeKeys.Health,
+                    AttributeKeys.HealthMax,
+                    AttributeKeys.ResourceTypePrimary,
+                    AttributeKeys.ResourceTypeSecondary
+                };
+                uint?[] baseVals = new uint?[baseKeys.Length];
+                bool gotBase = attrTable != null && reader.TryReadAttributes(attrTable, me.GroupId, baseKeys, baseVals);
+
+                float? health = gotBase ? GameReader.DecodeHealth(baseVals[0]) : reader.ReadHealth(me.GroupId);
                 if (health.HasValue)
                 {
                     snapshot.Health = (double)health.Value;
@@ -330,6 +341,45 @@ namespace SuperD3Hud.Game
                 {
                     snapshot.Health = -1.0;
                     snapshot.Status = "Здоровье: неизвестно";
+                }
+
+                if (gotBase)
+                {
+                    float? healthMax = GameReader.DecodeHealth(baseVals[1]);
+                    if (healthMax.HasValue && healthMax.Value > 0f)
+                        snapshot.HealthMax = (double)healthMax.Value;
+
+                    if (baseVals[2].HasValue)
+                    {
+                        int priType = unchecked((int)baseVals[2].Value);
+                        if (priType >= 0 && priType <= 8)
+                        {
+                            snapshot.PrimaryResourceType = priType;
+                            double cur, max, regen;
+                            if (ReadResourceSet(reader, attrTable, me.GroupId, priType, out cur, out max, out regen))
+                            {
+                                snapshot.PrimaryResource = cur;
+                                snapshot.PrimaryResourceMax = max;
+                                snapshot.PrimaryResourceRegen = regen;
+                            }
+                        }
+                    }
+
+                    if (baseVals[3].HasValue)
+                    {
+                        int secType = unchecked((int)baseVals[3].Value);
+                        if (secType >= 0 && secType <= 8)
+                        {
+                            snapshot.SecondaryResourceType = secType;
+                            double cur, max, regen;
+                            if (ReadResourceSet(reader, attrTable, me.GroupId, secType, out cur, out max, out regen))
+                            {
+                                snapshot.SecondaryResource = cur;
+                                snapshot.SecondaryResourceMax = max;
+                                snapshot.SecondaryResourceRegen = regen;
+                            }
+                        }
+                    }
                 }
 
                 snapshot.CapturedUtc = DateTime.UtcNow;
@@ -446,19 +496,67 @@ namespace SuperD3Hud.Game
                 copy.Skills.Add(skill);
             }
             copy.GameTick = source.GameTick;
+            copy.PlayerSno = source.PlayerSno;
             if (source.EquippedPowerSnos != null)
                 copy.EquippedPowerSnos = (int[])source.EquippedPowerSnos.Clone();
             if (source.EquippedRunes != null)
                 copy.EquippedRunes = (int[])source.EquippedRunes.Clone();
+            copy.PrimaryResourceType = source.PrimaryResourceType;
             copy.PrimaryResource = source.PrimaryResource;
             copy.PrimaryResourceMax = source.PrimaryResourceMax;
+            copy.PrimaryResourceRegen = source.PrimaryResourceRegen;
+            copy.SecondaryResourceType = source.SecondaryResourceType;
             copy.SecondaryResource = source.SecondaryResource;
             copy.SecondaryResourceMax = source.SecondaryResourceMax;
+            copy.SecondaryResourceRegen = source.SecondaryResourceRegen;
             copy.Health = source.Health;
             copy.HealthMax = source.HealthMax;
             copy.Status = source.Status;
             copy.CapturedUtc = source.CapturedUtc;
             return copy;
+        }
+
+        private static bool ReadResourceSet(GameReader reader, GameAttributeTable table, int groupId,
+                                            int resourceType, out double cur, out double max, out double regen)
+        {
+            cur = -1.0;
+            max = -1.0;
+            regen = 0.0;
+            if (reader == null || table == null || resourceType < 0) return false;
+
+            uint[] keys = new uint[]
+            {
+                AttributeKeys.MakeKey(resourceType, AttributeKeys.ResourceCurId),
+                AttributeKeys.MakeKey(resourceType, AttributeKeys.ResourceMaxId),
+                AttributeKeys.MakeKey(resourceType, AttributeKeys.ResourceRegenId)
+            };
+            uint?[] vals = new uint?[3];
+            if (!reader.TryReadAttributes(table, groupId, keys, vals)) return false;
+
+            float? curF = GameReader.DecodeHealth(vals[0]);
+            float? maxF = GameReader.DecodeHealth(vals[1]);
+            float? regF = GameReader.DecodeHealth(vals[2]);
+
+            bool any = false;
+            if (maxF.HasValue && maxF.Value >= 0f)
+            {
+                max = (double)maxF.Value;
+                any = true;
+            }
+            if (curF.HasValue && curF.Value >= 0f)
+            {
+                cur = max > 0.0 ? Math.Min(max, (double)curF.Value) : (double)curF.Value;
+                any = true;
+            }
+            else if (max > 0.0)
+            {
+                cur = max;
+                any = true;
+            }
+            if (regF.HasValue && regF.Value >= 0f)
+                regen = (double)regF.Value;
+
+            return any;
         }
 
         /// <summary>
@@ -495,19 +593,34 @@ namespace SuperD3Hud.Game
                                          Dictionary<int, double> durationBySlot,
                                          Dictionary<int, int> finishTickBySlot = null)
         {
-            if (remainingBySlot == null || remainingBySlot.Count == 0) return;
+            if (remainingBySlot == null) return;
             DateTime now = DateTime.UtcNow;
 
             lock (_sync)
             {
                 for (int slot = 0; slot < SlotCount; slot++)
                 {
-                    double remaining;
-                    if (!remainingBySlot.TryGetValue(slot, out remaining)) continue;
-
                     SlotState state = _slots[slot];
-                    state.MemoryRemaining = remaining < 0.0 ? 0.0 : remaining;
+                    double remaining;
+                    if (!remainingBySlot.TryGetValue(slot, out remaining) || remaining <= 0.0)
+                    {
+                        // Memory confirms no active cooldown: clear any stale countdown immediately.
+                        bool hadMemory = state.MemoryRemaining >= 0.0;
+                        state.MemoryRemaining = -1.0;
+                        state.MemoryDuration = 0.0;
+                        state.MemoryFinishTick = 0;
+                        if (hadMemory)
+                        {
+                            state.Running = false;
+                            state.StartDurationSeconds = 0.0;
+                        }
+                        continue;
+                    }
+
+                    state.MemoryRemaining = remaining;
                     state.MemoryUpdatedUtc = now;
+                    state.Running = false;
+                    state.StartDurationSeconds = 0.0;
 
                     int finishTick = 0;
                     if (finishTickBySlot != null && finishTickBySlot.TryGetValue(slot, out finishTick))
@@ -518,12 +631,6 @@ namespace SuperD3Hud.Game
                         state.MemoryDuration = duration;
                     else if (remaining > state.MemoryDuration)
                         state.MemoryDuration = remaining;
-
-                    // A duration learned from the game becomes the slot's
-                    // duration, so the HUD shows the skill even when the user
-                    // never typed a number.
-                    if (state.DurationSeconds <= 0.0 && state.MemoryDuration > 0.0)
-                        state.DurationSeconds = state.MemoryDuration;
                 }
             }
         }

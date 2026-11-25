@@ -119,6 +119,16 @@ namespace SuperD3Hud.Game
                 float playerY = hasPlayer ? player.Y : 0f;
                 bool hasPlayerPosition = hasPlayer && ValidPosition(playerX, playerY);
 
+                GameAttributeTable attrTable = reader.OpenAttributes();
+                uint[] monsterKeys = new uint[]
+                {
+                    AttributeKeys.Deleted,
+                    AttributeKeys.Health,
+                    AttributeKeys.TeamId,
+                    AttributeKeys.HealthMax
+                };
+                uint?[] monsterVals = new uint?[4];
+
                 List<MonsterCandidate> candidates = new List<MonsterCandidate>();
                 for (int i = 0; i < actors.Count; i++)
                 {
@@ -126,15 +136,42 @@ namespace SuperD3Hud.Game
                     if (!record.IsMonster) continue;
                     if (record.WorldId != worldId) continue;
                     if (!ValidPosition(record.X, record.Y)) continue;
-                    if (reader.IsDeleted(record.GroupId)) continue;
-
-                    float? health = reader.ReadHealth(record.GroupId);
-                    if (!health.HasValue) continue;
-                    if (health.Value <= 0f) continue;
 
                     bool boss = record.Rarity == (int)MonsterRarity.Boss
                                 || GuardianSnos.Contains(record.Sno);
                     bool elite = IsEliteRarity(record.Rarity);
+
+                    float? health;
+                    float? healthMax = null;
+                    if (attrTable != null)
+                    {
+                        if (!reader.TryReadAttributes(attrTable, record.GroupId, monsterKeys, monsterVals))
+                            continue;
+                        if (monsterVals[0].HasValue && monsterVals[0].Value > 0u)
+                            continue;
+
+                        health = GameReader.DecodeHealth(monsterVals[1]);
+                        if (!health.HasValue || health.Value < 1.0f) continue;
+
+                        if (monsterVals[2].HasValue)
+                        {
+                            // TeamID 10 = hostile monster; skip neutral town NPCs (1) and allies/pets (2).
+                            if (monsterVals[2].Value != 10u) continue;
+                        }
+                        else if (!boss && !elite && health.Value < 10.0f)
+                        {
+                            // Skip 0.001..9 HP invisible script triggers and props without a TeamID.
+                            continue;
+                        }
+
+                        healthMax = GameReader.DecodeHealth(monsterVals[3]);
+                    }
+                    else
+                    {
+                        if (reader.IsDeleted(record.GroupId)) continue;
+                        health = reader.ReadHealth(record.GroupId);
+                        if (!health.HasValue || health.Value < 1.0f) continue;
+                    }
 
                     MonsterMarker marker = new MonsterMarker();
                     marker.Id = record.Id;
@@ -143,6 +180,9 @@ namespace SuperD3Hud.Game
                     marker.X = record.X;
                     marker.Y = record.Y;
                     marker.Health = health.Value;
+                    marker.MaxHealth = (healthMax.HasValue && healthMax.Value > health.Value)
+                        ? healthMax.Value
+                        : health.Value;
                     marker.IsElite = elite;
                     marker.IsBoss = boss;
                     if (boss) marker.Label = "Босс";
@@ -345,6 +385,7 @@ namespace SuperD3Hud.Game
                 snapshot.DamageActive = _damage.Active;
                 snapshot.DamageTotal = _damage.Total;
                 snapshot.DamageDps = _damage.Dps;
+                snapshot.DamagePeakDps = _damage.PeakDps;
                 snapshot.DamageEntries = new List<DamageEntry>(_damage.Entries);
                 snapshot.SpecialArea = _specialArea;
                 snapshot.RiftPercentage = _riftProgress;
@@ -574,6 +615,13 @@ namespace SuperD3Hud.Game
             copy.Loot = new List<LootMarker>(source.Loot);
             copy.PartyMembers = new List<PartyMember>(source.PartyMembers);
             copy.Interactive = new List<InteractiveMarker>(source.Interactive);
+            copy.DamageActive = source.DamageActive;
+            copy.DamageTotal = source.DamageTotal;
+            copy.DamageDps = source.DamageDps;
+            copy.DamagePeakDps = source.DamagePeakDps;
+            copy.DamageEntries = source.DamageEntries != null
+                ? new List<DamageEntry>(source.DamageEntries)
+                : new List<DamageEntry>();
             copy.Status = source.Status;
             copy.SpecialArea = source.SpecialArea;
             copy.RiftPercentage = source.RiftPercentage;

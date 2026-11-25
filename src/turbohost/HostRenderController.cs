@@ -113,10 +113,13 @@ namespace SuperD3Hud.TurboHost
                         int w = WindowWidthOrDefault;
                         int h = WindowHeightOrDefault;
                         float scale = h / 1080f;
-                        float size = 132f * scale;
-                        float cx = w * 0.5f - 315f * scale;
-                        float y = h - 150f * scale;
-                        return new RectangleF(cx - size * 0.5f, y, size, size);
+                        // Health orb center is w*0.5 - 412*scale; width=180*scale compensates for
+                        // ResourceOverGlobePlugin painting at Left + 0.6*Width so text sits centered in the globe.
+                        float orbCenterX = w * 0.5f - 412f * scale;
+                        float boxW = 180f * scale;
+                        float boxH = 144f * scale;
+                        float y = h - 158f * scale;
+                        return new RectangleF(orbCenterX - boxW * 0.6f, y, boxW, boxH);
                     });
             }
 
@@ -129,10 +132,10 @@ namespace SuperD3Hud.TurboHost
                         int w = WindowWidthOrDefault;
                         int h = WindowHeightOrDefault;
                         float scale = h / 1080f;
-                        float size = 132f * scale;
-                        float cx = w * 0.5f + 315f * scale;
-                        float y = h - 150f * scale;
-                        return new RectangleF(cx - size * 0.5f, y, size, size);
+                        float orbCenterX = w * 0.5f + 412f * scale;
+                        float size = 144f * scale;
+                        float y = h - 158f * scale;
+                        return new RectangleF(orbCenterX - size * 0.5f, y, size, size);
                     });
             }
 
@@ -246,49 +249,48 @@ namespace SuperD3Hud.TurboHost
         public IUiElement GetPlayerSkillUiElement(ActionKey key)
         {
             return GetOrCreateUiElement("Root.NormalLayer.skill_button_" + ((int)key).ToString(),
-                delegate { return _context != null && _context.GameRunning; },
+                delegate { return IsInGameHudVisible(); },
                 delegate
                 {
                     int w = _context == null || _context.WindowWidth <= 0 ? 1920 : _context.WindowWidth;
                     int h = _context == null || _context.WindowHeight <= 0 ? 1080 : _context.WindowHeight;
                     float scale = h / 1080f;
                     float btnSize = 54f * scale;
-                    float btnGap = 4f * scale;
-                    float skullHalfGap = 13f * scale;
-                    float y = h - 95f * scale;
+                    float half = btnSize * 0.5f;
+                    float y = h - 77f * scale;
 
-                    float x;
+                    // Calibrated directly against Diablo III's bottom skill bar (skull sits between LMB and RMB).
+                    float cx;
                     switch (key)
                     {
                         case ActionKey.Skill1:
-                            x = w * 0.5f - skullHalfGap - btnSize - 3f * (btnSize + btnGap);
+                            cx = w * 0.5f - 301.5f * scale;
                             break;
                         case ActionKey.Skill2:
-                            x = w * 0.5f - skullHalfGap - btnSize - 2f * (btnSize + btnGap);
+                            cx = w * 0.5f - 234.0f * scale;
                             break;
                         case ActionKey.Skill3:
-                            x = w * 0.5f - skullHalfGap - btnSize - 1f * (btnSize + btnGap);
+                            cx = w * 0.5f - 167.0f * scale;
                             break;
                         case ActionKey.Skill4:
-                            x = w * 0.5f - skullHalfGap - btnSize;
+                            cx = w * 0.5f - 100.0f * scale;
                             break;
                         case ActionKey.LeftSkill:
-                            x = w * 0.5f + skullHalfGap;
+                            cx = w * 0.5f - 30.5f * scale;
                             break;
                         case ActionKey.RightSkill:
-                            x = w * 0.5f + skullHalfGap + btnSize + btnGap;
+                            cx = w * 0.5f + 32.0f * scale;
                             break;
                         case ActionKey.Heal:
-                            x = w * 0.5f - skullHalfGap - btnSize - 3f * (btnSize + btnGap) - (btnSize + btnGap * 2f);
+                            cx = w * 0.5f + 102.0f * scale;
                             break;
                         case ActionKey.TownPortal:
-                            x = w * 0.5f + skullHalfGap + 2f * (btnSize + btnGap) + btnGap;
+                            cx = w * 0.5f + 160.0f * scale;
                             break;
                         default:
-                            x = -1000f;
-                            break;
+                            return new RectangleF(-1000f, y, btnSize, btnSize);
                     }
-                    return new RectangleF(x, y, btnSize, btnSize);
+                    return new RectangleF(cx - half, y, btnSize, btnSize);
                 });
         }
 
@@ -447,7 +449,8 @@ namespace SuperD3Hud.TurboHost
                 if (_context != null && _context.LargeMapOpen)
                 {
                     int h = _context.WindowHeight;
-                    return (h > 0 ? (float)h / 1080f : 1f) * 2.8f;
+                    float largeScale = _context.LargeMapScale > 0.01f ? _context.LargeMapScale : 1f;
+                    return (h > 0 ? (float)h / 1200f : 1f) * largeScale;
                 }
                 RectangleF mmRect = MinimapUiElement.Rectangle;
                 float baseWidth = mmRect.Width > 0 ? mmRect.Width : 300f;

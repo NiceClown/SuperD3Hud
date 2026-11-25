@@ -37,23 +37,29 @@ namespace SuperD3Hud.Game
         /// <summary>Game runs at 60 ticks per second; attribute values are ticks.</summary>
         public const double TicksPerSecond = 60.0;
 
-        /// <summary>Descriptor candidates from the public attribute table (0x272 = Power_Cooldown, 0x252 = Power_Cooldown_Start).</summary>
-        private static readonly int[] SeedDescriptors = new int[] { 0x272, 0x252, 0x16B, 0x16C };
+        /// <summary>Verified Diablo III attribute descriptors (0x16A = Power_Cooldown, 0x16B = Power_Cooldown_Start).</summary>
+        private static readonly int[] SeedDescriptors = new int[]
+        {
+            AttributeKeys.PowerCooldownDescriptor,
+            AttributeKeys.PowerCooldownStartDescriptor
+        };
 
         private const int MinPower = 1000;
         private const int MaxPower = 0xFFFFF;
         /// <summary>Buff icon descriptors occupy this range and are skipped.</summary>
-        private const int BuffIconLow = 0x2FF;
+        private const int BuffIconLow = 0x24E;
         private const int BuffIconHigh = 0x31F;
+        private const int MaxCooldownTicks = 3600 * 60;
 
         private readonly object _sync = new object();
 
-        private int _durationDescriptor = 0x272;
-        private int _startDescriptor = 0x252;
+        private int _durationDescriptor = AttributeKeys.PowerCooldownDescriptor;
+        private int _startDescriptor = AttributeKeys.PowerCooldownStartDescriptor;
 
         private readonly Dictionary<int, double> _remaining = new Dictionary<int, double>();
         private readonly Dictionary<int, double> _duration = new Dictionary<int, double>();
         private readonly Dictionary<int, int> _finishTick = new Dictionary<int, int>();
+        private readonly Dictionary<int, int> _charges = new Dictionary<int, int>();
         private readonly Dictionary<int, uint> _lastRaw = new Dictionary<int, uint>();
         private readonly Dictionary<int, DateTime> _anchors = new Dictionary<int, DateTime>();
         private readonly Dictionary<int, DateTime> _seen = new Dictionary<int, DateTime>();
@@ -87,7 +93,7 @@ namespace SuperD3Hud.Game
                 foreach (KeyValuePair<int, int> pair in _slotByPower)
                 {
                     double value;
-                    if (_remaining.TryGetValue(pair.Key, out value) && value >= 0)
+                    if (_remaining.TryGetValue(pair.Key, out value) && value > 0.0)
                         result[pair.Value] = value;
                 }
             }
@@ -103,7 +109,7 @@ namespace SuperD3Hud.Game
                 foreach (KeyValuePair<int, int> pair in _slotByPower)
                 {
                     double value;
-                    if (_duration.TryGetValue(pair.Key, out value) && value > 0)
+                    if (_duration.TryGetValue(pair.Key, out value) && value > 0.0)
                         result[pair.Value] = value;
                 }
             }
@@ -126,13 +132,46 @@ namespace SuperD3Hud.Game
             return result;
         }
 
+        /// <summary>Charge counts per skill slot, when available.</summary>
+        public Dictionary<int, int> ChargesBySlot()
+        {
+            Dictionary<int, int> result = new Dictionary<int, int>();
+            lock (_sync)
+            {
+                foreach (KeyValuePair<int, int> pair in _slotByPower)
+                {
+                    int charges;
+                    if (_charges.TryGetValue(pair.Key, out charges) && charges >= 0)
+                        result[pair.Value] = charges;
+                }
+            }
+            return result;
+        }
+
+        /// <summary>Checks whether a persisted descriptor is a legacy Buff_Icon_* false positive.</summary>
+        public static bool IsLegacyBuffDescriptor(int descriptor)
+        {
+            return descriptor == 0x252 || descriptor == 0x253
+                || descriptor == 0x272 || descriptor == 0x273;
+        }
+
         /// <summary>Restores a descriptor pair found in a previous session.</summary>
         public void Restore(int durationDescriptor, int startDescriptor)
         {
             lock (_sync)
             {
-                _durationDescriptor = durationDescriptor > 0 ? durationDescriptor : 0x272;
-                _startDescriptor = startDescriptor > 0 ? startDescriptor : 0x252;
+                if (durationDescriptor <= 0 || IsLegacyBuffDescriptor(durationDescriptor))
+                {
+                    _durationDescriptor = AttributeKeys.PowerCooldownDescriptor;
+                    _startDescriptor = AttributeKeys.PowerCooldownStartDescriptor;
+                }
+                else
+                {
+                    _durationDescriptor = durationDescriptor;
+                    _startDescriptor = (startDescriptor > 0 && !IsLegacyBuffDescriptor(startDescriptor))
+                        ? startDescriptor
+                        : durationDescriptor + 1;
+                }
                 _status = "Кулдауны: чтение из памяти";
             }
         }
@@ -156,14 +195,15 @@ namespace SuperD3Hud.Game
                 _remaining.Clear();
                 _duration.Clear();
                 _finishTick.Clear();
+                _charges.Clear();
                 _lastRaw.Clear();
                 _anchors.Clear();
                 _seen.Clear();
                 _slotByPower.Clear();
                 _candidateHits.Clear();
                 _badFrames = 0;
-                _durationDescriptor = 0x272;
-                _startDescriptor = 0x252;
+                _durationDescriptor = AttributeKeys.PowerCooldownDescriptor;
+                _startDescriptor = AttributeKeys.PowerCooldownStartDescriptor;
                 _status = "Кулдауны: чтение из памяти";
             }
         }
@@ -182,33 +222,7 @@ namespace SuperD3Hud.Game
                 if (equipped == null) equipped = reader.ReadEquippedSkills();
 
                 List<KeyValuePair<uint, uint>> attributes = reader.ReadAllAttributes(player.GroupId);
-                DateTime now = DateTime.UtcNow;
-
-                lock (_sync)
-                {
-                    if (equipped != null)
-                    {
-                        for (int i = 0; i < equipped.Length; i++)
-                        {
-                            if (equipped[i].PowerSno > 0)
-                                _slotByPower[equipped[i].PowerSno] = i;
-                        }
-                    }
-
-                    if (attributes.Count == 0)
-                    {
-                        _status = "Кулдауны: у игрока нет атрибутов";
-                        return result;
-                    }
-
-                    if (_durationDescriptor <= 0)
-                        _durationDescriptor = 0x272;
-                    if (_startDescriptor <= 0)
-                        _startDescriptor = 0x252;
-
-                    ReadValues(attributes, now, result, gameTick);
-                    _status = "Кулдауны: чтение из памяти (тик " + gameTick + ")";
-                }
+                return ProcessAttributes(attributes, gameTick, equipped, DateTime.UtcNow);
             }
             catch (Exception ex)
             {
@@ -218,13 +232,77 @@ namespace SuperD3Hud.Game
                     _status = "Кулдауны: " + ex.Message;
                     if (_badFrames > 50)
                     {
-                        _durationDescriptor = 0x272;
-                        _startDescriptor = 0x252;
+                        _durationDescriptor = AttributeKeys.PowerCooldownDescriptor;
+                        _startDescriptor = AttributeKeys.PowerCooldownStartDescriptor;
                         _badFrames = 0;
                     }
                 }
             }
             return result;
+        }
+
+        /// <summary>Processes pre-read player attributes (also used by offline self-tests).</summary>
+        public List<CooldownEntry> PollAttributes(List<KeyValuePair<uint, uint>> attributes,
+                                                  int gameTick,
+                                                  GameReader.EquippedSkill[] equipped)
+        {
+            return ProcessAttributes(attributes, gameTick, equipped, DateTime.UtcNow);
+        }
+
+        private List<CooldownEntry> ProcessAttributes(List<KeyValuePair<uint, uint>> attributes,
+                                                      int gameTick,
+                                                      GameReader.EquippedSkill[] equipped,
+                                                      DateTime now)
+        {
+            List<CooldownEntry> result = new List<CooldownEntry>();
+            lock (_sync)
+            {
+                UpdateEquippedSlotMap(equipped);
+
+                if (attributes == null || attributes.Count == 0)
+                {
+                    _status = "Кулдауны: у игрока нет атрибутов";
+                    return result;
+                }
+
+                if (_durationDescriptor <= 0 || IsLegacyBuffDescriptor(_durationDescriptor))
+                    _durationDescriptor = AttributeKeys.PowerCooldownDescriptor;
+                if (_startDescriptor <= 0 || IsLegacyBuffDescriptor(_startDescriptor))
+                    _startDescriptor = AttributeKeys.PowerCooldownStartDescriptor;
+
+                ReadValues(attributes, now, result, gameTick);
+                _status = "Кулдауны: чтение из памяти (тик " + gameTick + ", " +
+                          _durationDescriptor + "/" + _startDescriptor + ")";
+            }
+            return result;
+        }
+
+        private void UpdateEquippedSlotMap(GameReader.EquippedSkill[] equipped)
+        {
+            if (equipped == null) return;
+
+            bool anyEquipped = false;
+            for (int i = 0; i < equipped.Length; i++)
+            {
+                if (equipped[i].PowerSno > 0)
+                {
+                    anyEquipped = true;
+                    break;
+                }
+            }
+
+            if (anyEquipped)
+            {
+                _slotByPower.Clear();
+                for (int i = 0; i < equipped.Length; i++)
+                {
+                    if (equipped[i].PowerSno > 0)
+                        _slotByPower[equipped[i].PowerSno] = i;
+                }
+            }
+
+            // Slot 6 is always Health Potion (ActionKey.Heal).
+            _slotByPower[AttributeKeys.HealthPotionPowerSno] = 6;
         }
 
         // ------------------------------------------------------------------
@@ -305,10 +383,12 @@ namespace SuperD3Hud.Game
         private void ReadValues(List<KeyValuePair<uint, uint>> attributes, DateTime now,
                                 List<CooldownEntry> result, int gameTick = 0)
         {
-            // Collect the raw values of this frame first, so the loop below can
-            // tell a fresh cooldown from a stale one.
             Dictionary<int, uint> durationRaw = new Dictionary<int, uint>();
             Dictionary<int, uint> startRaw = new Dictionary<int, uint>();
+            Dictionary<int, uint> nextChargeRaw = new Dictionary<int, uint>();
+            Dictionary<int, uint> rechargeStartRaw = new Dictionary<int, uint>();
+
+            _charges.Clear();
 
             for (int i = 0; i < attributes.Count; i++)
             {
@@ -321,109 +401,135 @@ namespace SuperD3Hud.Game
                     durationRaw[power] = attributes[i].Value;
                 else if (descriptor == _startDescriptor)
                     startRaw[power] = attributes[i].Value;
+                else if (descriptor == AttributeKeys.SkillChargesDescriptor)
+                    _charges[power] = unchecked((int)attributes[i].Value);
+                else if (descriptor == AttributeKeys.NextChargeGainedDescriptor)
+                    nextChargeRaw[power] = attributes[i].Value;
+                else if (descriptor == AttributeKeys.RechargeStartDescriptor)
+                    rechargeStartRaw[power] = attributes[i].Value;
             }
 
-            if (durationRaw.Count == 0)
+            if (durationRaw.Count == 0 && nextChargeRaw.Count == 0)
             {
-                // No skills are currently on cooldown. Clean up expired cooldowns without wiping descriptors.
-                _remaining.Clear();
-                _duration.Clear();
-                _finishTick.Clear();
-                _lastRaw.Clear();
+                ClearCooldownState();
                 return;
             }
             _badFrames = 0;
 
+            HashSet<int> activeThisFrame = new HashSet<int>();
+
             foreach (KeyValuePair<int, uint> pair in durationRaw)
             {
                 int power = pair.Key;
-                uint raw = pair.Value;
-                if (raw == 0) continue;
-
+                int finishTick = unchecked((int)pair.Value);
                 uint startRawVal = 0;
                 startRaw.TryGetValue(power, out startRawVal);
+                int startTick = unchecked((int)startRawVal);
 
-                double seconds = 0.0;
-                double dur = 0.0;
-
-                if (gameTick > 0 && raw > gameTick)
-                {
-                    // Target end game tick read directly from game memory (0x272).
-                    seconds = (raw - gameTick) / TicksPerSecond;
-                    dur = (startRawVal > 0 && raw > startRawVal)
-                        ? (raw - startRawVal) / TicksPerSecond
-                        : Math.Max(_durationValue(power), seconds);
-                    _finishTick[power] = (int)raw;
-                }
-                else if (gameTick == 0 && raw > 0 && raw <= 600000)
-                {
-                    uint previous;
-                    bool known = _lastRaw.TryGetValue(power, out previous);
-
-                    if (!known || raw > previous)
-                    {
-                        _anchors[power] = now;
-                        seconds = raw / TicksPerSecond;
-                    }
-                    else
-                    {
-                        DateTime anchor;
-                        if (!_anchors.TryGetValue(power, out anchor)) anchor = now;
-                        double elapsed = (now - anchor).TotalSeconds;
-                        seconds = (previous > raw) ? (raw / TicksPerSecond) : (raw / TicksPerSecond - elapsed);
-                    }
-                    dur = Math.Max(_durationValue(power), raw / TicksPerSecond);
-                }
-                else
-                {
-                    // Cooldown finished or expired
-                    _remaining.Remove(power);
-                    _duration.Remove(power);
-                    _finishTick.Remove(power);
+                double seconds;
+                double dur;
+                if (!TryComputeTickCooldown(gameTick, finishTick, startTick, power, out seconds, out dur))
                     continue;
-                }
 
-                if (seconds < 0) seconds = 0;
-
-                _lastRaw[power] = raw;
-                _remaining[power] = seconds;
-                _duration[power] = dur;
-                _seen[power] = now;
-
-                if (_lastKeySlot >= 0 && (now - _lastKeyAt).TotalMilliseconds < 800)
-                {
-                    _slotByPower[power] = _lastKeySlot;
-                }
-
-                CooldownEntry entry = new CooldownEntry();
-                entry.PowerSno = power;
-                entry.Remaining = seconds;
-                entry.Duration = dur;
-                entry.FromMemory = true;
-                result.Add(entry);
+                RecordActiveCooldown(power, finishTick, seconds, dur, now, result);
+                activeThisFrame.Add(power);
             }
 
-            // Forget powers that were not seen for a while, so a finished
-            // cooldown disappears instead of lingering at zero.
-            List<int> stale = null;
-            foreach (KeyValuePair<int, DateTime> pair in _seen)
+            // Charge-based skills report 0 charges with Next_Charge_Gained_time when empty.
+            foreach (KeyValuePair<int, uint> pair in nextChargeRaw)
             {
-                if ((now - pair.Value).TotalSeconds < 3) continue;
-                if (stale == null) stale = new List<int>();
-                stale.Add(pair.Key);
+                int power = pair.Key;
+                if (activeThisFrame.Contains(power)) continue;
+
+                int charges;
+                if (_charges.TryGetValue(power, out charges) && charges > 0) continue;
+
+                int nextTick = unchecked((int)pair.Value);
+                uint startRawVal = 0;
+                rechargeStartRaw.TryGetValue(power, out startRawVal);
+                int rechargeStart = unchecked((int)startRawVal);
+
+                double seconds;
+                double dur;
+                if (!TryComputeTickCooldown(gameTick, nextTick, rechargeStart, power, out seconds, out dur))
+                    continue;
+
+                RecordActiveCooldown(power, nextTick, seconds, dur, now, result);
+                activeThisFrame.Add(power);
             }
-            if (stale != null)
+
+            // Drop any cooldown that completed or disappeared on this frame.
+            List<int> expired = null;
+            foreach (int power in _remaining.Keys)
             {
-                for (int i = 0; i < stale.Count; i++)
-                {
-                    _remaining.Remove(stale[i]);
-                    _duration.Remove(stale[i]);
-                    _finishTick.Remove(stale[i]);
-                    _lastRaw.Remove(stale[i]);
-                    _anchors.Remove(stale[i]);
-                    _seen.Remove(stale[i]);
-                }
+                if (activeThisFrame.Contains(power)) continue;
+                if (expired == null) expired = new List<int>();
+                expired.Add(power);
             }
+            if (expired != null)
+            {
+                for (int i = 0; i < expired.Count; i++)
+                    RemovePowerState(expired[i]);
+            }
+        }
+
+        private bool TryComputeTickCooldown(int gameTick, int finishTick, int startTick, int power,
+                                            out double seconds, out double dur)
+        {
+            seconds = 0.0;
+            dur = 0.0;
+
+            // Ready sentinel in Diablo III: finishTick == -1 or int.MaxValue.
+            if (finishTick <= 0 || finishTick == int.MaxValue) return false;
+            if (gameTick <= 0) return false;
+
+            int delta = finishTick - gameTick;
+            if (delta <= 0 || delta > MaxCooldownTicks) return false;
+
+            seconds = delta / TicksPerSecond;
+            if (startTick > 0 && startTick < finishTick && (finishTick - startTick) <= MaxCooldownTicks)
+                dur = (finishTick - startTick) / TicksPerSecond;
+            else
+                dur = Math.Max(_durationValue(power), seconds);
+            return true;
+        }
+
+        private void RecordActiveCooldown(int power, int finishTick, double seconds, double dur,
+                                          DateTime now, List<CooldownEntry> result)
+        {
+            if (seconds < 0.0) seconds = 0.0;
+            _finishTick[power] = finishTick;
+            _lastRaw[power] = unchecked((uint)finishTick);
+            _remaining[power] = seconds;
+            _duration[power] = dur;
+            _seen[power] = now;
+
+            CooldownEntry entry = new CooldownEntry();
+            entry.PowerSno = power;
+            entry.Remaining = seconds;
+            entry.Duration = dur;
+            entry.FromMemory = true;
+            result.Add(entry);
+        }
+
+        private void RemovePowerState(int power)
+        {
+            _remaining.Remove(power);
+            _duration.Remove(power);
+            _finishTick.Remove(power);
+            _lastRaw.Remove(power);
+            _anchors.Remove(power);
+            _seen.Remove(power);
+        }
+
+        private void ClearCooldownState()
+        {
+            _remaining.Clear();
+            _duration.Clear();
+            _finishTick.Clear();
+            _lastRaw.Clear();
+            _anchors.Clear();
+            _seen.Clear();
         }
 
         private double _durationValue(int power)

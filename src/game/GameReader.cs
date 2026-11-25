@@ -79,14 +79,50 @@ namespace SuperD3Hud.Game
     /// <summary>Attribute identifiers used by the readers.</summary>
     public static class AttributeKeys
     {
-        /// <summary>Non-zero when the actor was removed from the world.</summary>
-        public const uint Deleted = 0xFFFFF296;
+        /// <summary>Team identifier: 10 is hostile monster, 2 player/ally, 1 neutral/town NPC.</summary>
+        public const uint TeamId = 0xFFFFF067u;
+        /// <summary>Non-zero when actor is invulnerable.</summary>
+        public const uint Invulnerable = 0xFFFFF069u;
         /// <summary>Current health of the actor.</summary>
-        public const uint Health = 0xFFFFF073;
+        public const uint Health = 0xFFFFF073u;
+        /// <summary>Maximum total health of the actor.</summary>
+        public const uint HealthMax = 0xFFFFF07Cu;
+        /// <summary>Primary resource type enum (0=Mana,1=Arcane,2=Fury,3=Spirit,5=Hatred,7=Wrath,8=Essence).</summary>
+        public const uint ResourceTypePrimary = 0xFFFFF094u;
+        /// <summary>Secondary resource type enum (6=Discipline).</summary>
+        public const uint ResourceTypeSecondary = 0xFFFFF095u;
+        /// <summary>Resource current attribute descriptor id (modified by ResourceType).</summary>
+        public const uint ResourceCurId = 0x096u;
+        /// <summary>Resource max total attribute descriptor id (modified by ResourceType).</summary>
+        public const uint ResourceMaxId = 0x099u;
+        /// <summary>Resource regen total attribute descriptor id (modified by ResourceType).</summary>
+        public const uint ResourceRegenId = 0x0A0u;
+        /// <summary>Non-zero when actor cannot be targeted.</summary>
+        public const uint Untargetable = 0xFFFFF12Bu;
+        /// <summary>Power_Cooldown attribute descriptor (finish game tick; -1 when ready).</summary>
+        public const int PowerCooldownDescriptor = 0x16A;
+        /// <summary>Power_Cooldown_Start attribute descriptor (start game tick; int.MaxValue when ready).</summary>
+        public const int PowerCooldownStartDescriptor = 0x16B;
+        /// <summary>Skill_Charges attribute descriptor.</summary>
+        public const int SkillChargesDescriptor = 0x172;
+        /// <summary>Next_Charge_Gained_time attribute descriptor.</summary>
+        public const int NextChargeGainedDescriptor = 0x173;
+        /// <summary>Recharge_Start_Time attribute descriptor.</summary>
+        public const int RechargeStartDescriptor = 0x174;
+        /// <summary>Health potion power SNO (DrinkHealthPotion).</summary>
+        public const int HealthPotionPowerSno = 30211;
         /// <summary>Item quality; 9 is legendary or set.</summary>
-        public const uint ItemQuality = 0xFFFFF17F;
+        public const uint ItemQuality = 0xFFFFF17Fu;
         /// <summary>Ancient rank: 0 normal, 1 ancient, 2 primal.</summary>
-        public const uint AncientRank = 0xFFFFF19D;
+        public const uint AncientRank = 0xFFFFF19Du;
+        /// <summary>Non-zero when the actor was removed from the world.</summary>
+        public const uint Deleted = 0xFFFFF296u;
+
+        /// <summary>Builds an attribute lookup key from a modifier and descriptor id.</summary>
+        public static uint MakeKey(int modifier, uint attrId)
+        {
+            return unchecked(((uint)modifier << 12) | (attrId & 0xFFFu));
+        }
     }
 
     /// <summary>

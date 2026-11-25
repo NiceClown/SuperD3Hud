@@ -513,9 +513,10 @@ namespace SuperD3Hud
             if (_gameService != null)
             {
                 Game.GameFeatures features = _gameService.Features;
-                features.Actors = settings.ShowMonsterMarkers || settings.ShowLootMarkers;
-                features.Buffs = settings.ShowBuffs;
-                features.Skills = settings.ShowSkills || settings.ShowHealth;
+                features.Actors = settings.ShowMonsterMarkers || settings.ShowLootMarkers
+                    || settings.ShowDamageMeter || (_turboRuntime != null && _turboRuntime.AnyEnabled);
+                features.Buffs = settings.ShowBuffs || (_turboRuntime != null && _turboRuntime.AnyEnabled);
+                features.Skills = settings.ShowSkills || settings.ShowHealth || (_turboRuntime != null && _turboRuntime.AnyEnabled);
                 features.Inventory = settings.ShowInventory || (MacroSettings != null && MacroSettings.Enabled && MacroSettings.SmartMode);
                 _gameService.ApplySettings();
 
@@ -759,6 +760,7 @@ namespace SuperD3Hud
             }
 
             if (_hudOverlay.Bounds != client) _hudOverlay.Bounds = client;
+            _hudOverlay.SuppressSkillCooldowns = _turboRuntime != null && _turboRuntime.IsPluginEnabled("OriginalSkillBarPlugin");
             _hudOverlay.Visible = true;
             _hudOverlay.UpdateContent(buffs, skills, inventory, actors);
 
@@ -842,7 +844,8 @@ namespace SuperD3Hud
                                        haveClient ? client.Y : 0,
                                        haveClient ? client.Width : 0,
                                        haveClient ? client.Height : 0,
-                                       _largeTracker != null && _largeTracker.Visible);
+                                       _largeTracker != null && _largeTracker.Visible,
+                                       (float)MapSettings.LargeScale);
                     // The plugins draw in world space, so they get the smooth
                     // position as well; otherwise every circle jumps once per
                     // actor poll.

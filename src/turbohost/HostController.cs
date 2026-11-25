@@ -43,7 +43,7 @@ namespace SuperD3Hud.TurboHost
             _game = new HostGameController(context, _sno);
             _time = new HostTimeController();
             _texture = new HostTextureController(canvas);
-            _stat = new HostStatController();
+            _stat = new HostStatController(context);
             _inventory = new HostInventoryController(context, _sno);
             _queue = new HostQueueController();
             _input = new HostInputController();

@@ -34,8 +34,8 @@ namespace SuperD3Hud.Game
         public int BuffOffsetX = 16;
         public int BuffOffsetY = 120;
 
-        // Cooldown length of the six skill slots, seconds. Zero means unknown.
-        public double[] Cooldowns = new double[] { 0.0, 0.0, 8.0, 8.0, 8.0, 15.0 };
+        // Cooldown length of the six skill slots, seconds. Zero means rely on live memory.
+        public double[] Cooldowns = new double[] { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 
         /// <summary>
         /// Attribute descriptor pair used to read real cooldowns from the game.
@@ -94,6 +94,15 @@ namespace SuperD3Hud.Game
 
             CooldownDescriptor = ini.GetInt("overlay", "CooldownDescriptor", CooldownDescriptor);
             CooldownStartDescriptor = ini.GetInt("overlay", "CooldownStartDescriptor", CooldownStartDescriptor);
+            if (CooldownReader.IsLegacyBuffDescriptor(CooldownDescriptor) || CooldownDescriptor == 0)
+            {
+                CooldownDescriptor = AttributeKeys.PowerCooldownDescriptor;
+                CooldownStartDescriptor = AttributeKeys.PowerCooldownStartDescriptor;
+            }
+            else if (CooldownReader.IsLegacyBuffDescriptor(CooldownStartDescriptor) || CooldownStartDescriptor <= 0)
+            {
+                CooldownStartDescriptor = CooldownDescriptor + 1;
+            }
             LargeMapKey = ini.GetInt("overlay", "LargeMapKey", LargeMapKey);
             WaypointKey = ini.GetInt("overlay", "WaypointKey", WaypointKey);
 

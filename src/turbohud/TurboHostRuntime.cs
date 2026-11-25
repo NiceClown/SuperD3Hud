@@ -282,6 +282,21 @@ namespace SuperD3Hud.TurboHud
             Interlocked.Exchange(ref _currentSince, 0L);
         }
 
+        public bool IsPluginEnabled(string className)
+        {
+            if (string.IsNullOrEmpty(className)) return false;
+            lock (_sync)
+            {
+                foreach (TurboPluginEntry entry in _plugins)
+                {
+                    if (entry != null && entry.Enabled && entry.Instance != null &&
+                        string.Equals(entry.ClassName, className, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+                return false;
+            }
+        }
+
         public bool AnyEnabled
         {
             get
@@ -444,10 +459,12 @@ namespace SuperD3Hud.TurboHud
                             // TurboHUD: the optional panels stay off.
                             enabled = instance.Enabled;
                             if (type.Name.Equals("GameInfoPlugin", StringComparison.OrdinalIgnoreCase) ||
-                                type.Name.Equals("DebugPlugin", StringComparison.OrdinalIgnoreCase))
+                                type.Name.Equals("DebugPlugin", StringComparison.OrdinalIgnoreCase) ||
+                                type.Name.Equals("ExperienceOverBarPlugin", StringComparison.OrdinalIgnoreCase) ||
+                                type.Name.Equals("NetworkLatencyPlugin", StringComparison.OrdinalIgnoreCase))
                             {
-                                // They need parts of the engine that the host
-                                // does not have and would draw over the game.
+                                // They need engine counters not read by the host
+                                // (paragon XP / ping) and would draw stray zeros.
                                 enabled = false;
                             }
                         }
@@ -739,11 +756,11 @@ namespace TurboPlugins
         /// </summary>
         public void Tick(GameService service, bool windowForeground,
                          int windowX, int windowY, int windowWidth, int windowHeight,
-                         bool largeMapOpen = false)
+                         bool largeMapOpen = false, float largeMapScale = 1f)
         {
             if (!_loaded) return;
 
-            _context.Update(service, windowForeground, windowX, windowY, windowWidth, windowHeight, largeMapOpen);
+            _context.Update(service, windowForeground, windowX, windowY, windowWidth, windowHeight, largeMapOpen, largeMapScale);
             UpdateUiScale(windowHeight);
 
             List<TurboPluginEntry> snapshot;

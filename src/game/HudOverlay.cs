@@ -188,6 +188,9 @@ namespace SuperD3Hud.Game
         /// <summary>Last drawing error, empty when the frame was shown.</summary>
         public string LastError { get; private set; }
 
+        /// <summary>When true, TurboHUD OriginalSkillBarPlugin renders slot cooldowns directly.</summary>
+        public bool SuppressSkillCooldowns { get; set; }
+
         /// <summary>Updates the data to draw and repaints when content or animations change.</summary>
         public void UpdateContent(BuffSnapshot buffs, SkillSnapshot skills, InventorySnapshot inventory, ActorSnapshot actors = null)
         {
@@ -304,15 +307,15 @@ namespace SuperD3Hud.Game
                 _lastRiftArea = 0;
             }
 
-            // 2. Skill cooldown smoothing + 350ms ready-flash transition
+            // 2. Skill cooldown smoothing (only when built-in skill cooldowns are active)
             SkillSnapshot skills = _skills;
-            if (_settings.Enabled && _settings.ShowSkills && skills != null && skills.Skills != null)
+            if (_settings.Enabled && _settings.ShowSkills && !SuppressSkillCooldowns && skills != null && skills.Skills != null)
             {
                 for (int i = 0; i < skills.Skills.Count; i++)
                 {
                     SkillCooldown slot = skills.Skills[i];
                     if (slot == null) continue;
-                    if (slot.DurationSeconds <= 0.001 && slot.RemainingSeconds <= 0.001) continue;
+                    if (slot.IsReady && !_skillAnim.ContainsKey(slot.Slot)) continue;
 
                     SkillAnimState st;
                     if (!_skillAnim.TryGetValue(slot.Slot, out st))
@@ -369,8 +372,6 @@ namespace SuperD3Hud.Game
 
                     if (!isReady)
                         animActive = true;
-                    else if (nowSec - st.ReadyFlashStartSec <= ReadyFlashDurationSec)
-                        animActive = true;
                 }
             }
 
@@ -388,7 +389,7 @@ namespace SuperD3Hud.Game
             h = HashInt(h, (int)Math.Round(_settings.Scale * 100.0));
             h = HashInt(h, Clamp(_settings.Opacity, 0, 255));
             h = HashInt(h, _settings.ShowBuffs ? 1 : 0);
-            h = HashInt(h, _settings.ShowSkills ? 1 : 0);
+            h = HashInt(h, _settings.ShowSkills && !SuppressSkillCooldowns ? 1 : 0);
             h = HashInt(h, _settings.ShowHealth ? 1 : 0);
             h = HashInt(h, _settings.ShowInventory ? 1 : 0);
             h = HashInt(h, _settings.ShowDamageMeter ? 1 : 0);
@@ -412,16 +413,13 @@ namespace SuperD3Hud.Game
                 h = HashInt(h, count);
             }
 
-            if (_settings.ShowSkills && _skills != null && _skills.Skills != null)
+            if (_settings.ShowSkills && !SuppressSkillCooldowns && _skills != null && _skills.Skills != null)
             {
                 for (int i = 0; i < _skills.Skills.Count; i++)
                 {
                     SkillCooldown slot = _skills.Skills[i];
-                    if (slot == null) continue;
-                    if (slot.DurationSeconds <= 0.001 && slot.RemainingSeconds <= 0.001) continue;
+                    if (slot == null || slot.IsReady || slot.RemainingSeconds <= 0.05) continue;
                     h = HashInt(h, slot.Slot);
-                    h = HashString(h, slot.Key);
-                    h = HashInt(h, slot.IsReady ? 1 : 0);
                     h = HashInt(h, (int)Math.Round(slot.DurationSeconds * 10.0));
                     h = HashInt(h, (int)Math.Round(slot.RemainingSeconds * 10.0));
                 }
@@ -443,12 +441,14 @@ namespace SuperD3Hud.Game
                 h = HashInt(h, _actors.DamageEntries.Count);
                 h = HashLong(h, (long)Math.Round(_actors.DamageTotal));
                 h = HashLong(h, (long)Math.Round(_actors.DamageDps));
+                h = HashLong(h, (long)Math.Round(_actors.DamagePeakDps));
                 for (int i = 0; i < _actors.DamageEntries.Count; i++)
                 {
                     DamageEntry e = _actors.DamageEntries[i];
                     if (e == null) continue;
                     h = HashString(h, e.Name);
                     h = HashLong(h, (long)Math.Round(e.Damage));
+                    h = HashLong(h, (long)Math.Round(e.Dps));
                     h = HashInt(h, (int)Math.Round(e.Share * 1000.0));
                     h = HashInt(h, e.IsLocalPlayer ? 1 : 0);
                 }
@@ -616,17 +616,19 @@ namespace SuperD3Hud.Game
 
             Font headFont = FontFor((float)(10f * scale), true);
             Font rowFont = FontFor((float)(9.5f * scale), false);
+            Font footFont = FontFor((float)(8.5f * scale), false);
 
             float rowHeight = (float)(23 * scale);
             float pad = (float)(8 * scale);
             float barHeight = (float)(3.5 * scale);
 
             int rows = actors.DamageEntries.Count;
-            float headHeight = (float)(20 * scale);
-            float panelHeight = headHeight + rows * rowHeight + rowHeight + pad * 1.8f;
-            float panelWidth = (float)(240 * scale);
+            float headHeight = (float)(21 * scale);
+            float footHeight = (float)(18 * scale);
+            float panelHeight = headHeight + rows * rowHeight + footHeight + pad * 1.9f;
+            float panelWidth = (float)(258 * scale);
 
-            float x = (float)(14 * scale);
+            float x = (float)(16 * scale);
             float y = (float)(130 * scale);
 
             DrawGothicPanel(g, x, y, panelWidth, panelHeight, alpha, scale, true);
@@ -634,11 +636,11 @@ namespace SuperD3Hud.Game
             float textX = x + pad;
             float textY = y + pad;
 
-            DrawShadowText(g, "Урон группы", headFont, ParchmentText, alpha, textX, textY, false);
+            DrawShadowText(g, "ДПС-трекер", headFont, ParchmentText, alpha, textX, textY, false);
 
-            string total = FormatDamage(actors.DamageTotal);
-            SizeF totalSize = g.MeasureString(total, headFont);
-            DrawShadowText(g, total, headFont, GoldHighlight, alpha, x + panelWidth - pad - totalSize.Width, textY, false);
+            string currentDps = FormatDamage(actors.DamageDps) + "/с";
+            SizeF dpsSize = g.MeasureString(currentDps, headFont);
+            DrawShadowText(g, currentDps, headFont, ReadyFlashGold, alpha, x + panelWidth - pad - dpsSize.Width, textY, false);
 
             float dividerY = textY + headHeight - (float)(3 * scale);
             using (Pen div = new Pen(Color.FromArgb(Clamp(alpha * 160 / 255, 0, 255), InnerBevel), 1f))
@@ -656,11 +658,15 @@ namespace SuperD3Hud.Game
                     ? Color.FromArgb(212, 138, 36)
                     : Color.FromArgb(84, 142, 210);
 
-                DrawShadowText(g, entry.Name, rowFont, color, alpha, textX, textY, false);
+                int pct = (int)Math.Round(Math.Max(0, Math.Min(1, entry.Share)) * 100.0);
+                string leftText = rows > 1 ? string.Format("{0} ({1}%)", entry.Name, pct) : entry.Name;
+                DrawShadowText(g, leftText, rowFont, color, alpha, textX, textY, false);
 
-                string value = FormatDamage(entry.Damage);
-                SizeF size = g.MeasureString(value, rowFont);
-                DrawShadowText(g, value, rowFont, IvoryText, alpha, x + panelWidth - pad - size.Width, textY, false);
+                string rightText = entry.Dps > 0.5
+                    ? FormatDamage(entry.Dps) + "/с"
+                    : FormatDamage(entry.Damage);
+                SizeF size = g.MeasureString(rightText, rowFont);
+                DrawShadowText(g, rightText, rowFont, IvoryText, alpha, x + panelWidth - pad - size.Width, textY, false);
 
                 // Framed share bar under the name.
                 float fullBarW = panelWidth - pad * 2;
@@ -684,17 +690,27 @@ namespace SuperD3Hud.Game
                 textY += rowHeight;
             }
 
-            string dps = "Урон/с: " + FormatDamage(actors.DamageDps);
-            DrawShadowText(g, dps, rowFont, MutedStoneText, alpha, textX, textY, false);
+            string totalText = "Всего: " + FormatDamage(actors.DamageTotal);
+            DrawShadowText(g, totalText, footFont, MutedStoneText, alpha, textX, textY, false);
+
+            double peak = Math.Max(actors.DamagePeakDps, actors.DamageDps);
+            if (peak > 0.5)
+            {
+                string peakText = "Пик: " + FormatDamage(peak) + "/с";
+                SizeF peakSize = g.MeasureString(peakText, footFont);
+                DrawShadowText(g, peakText, footFont, MutedStoneText, alpha, x + panelWidth - pad - peakSize.Width, textY, false);
+            }
         }
 
         /// <summary>A short number: 1 234 567 890 becomes "1.23 Млрд".</summary>
         private static string FormatDamage(double value)
         {
-            if (value >= 1000000000d) return (value / 1000000000d).ToString("0.00", CultureInfo.InvariantCulture) + " Млрд";
-            if (value >= 1000000d) return (value / 1000000d).ToString("0.00", CultureInfo.InvariantCulture) + " М";
-            if (value >= 1000d) return (value / 1000d).ToString("0.0", CultureInfo.InvariantCulture) + " К";
-            return ((int)Math.Round(value)).ToString();
+            if (value >= 1e15) return (value / 1e15).ToString("0.00", CultureInfo.InvariantCulture) + " Квд";
+            if (value >= 1e12) return (value / 1e12).ToString("0.00", CultureInfo.InvariantCulture) + " Т";
+            if (value >= 1e9) return (value / 1e9).ToString("0.00", CultureInfo.InvariantCulture) + " Млрд";
+            if (value >= 1e6) return (value / 1e6).ToString("0.00", CultureInfo.InvariantCulture) + " М";
+            if (value >= 1e3) return (value / 1e3).ToString("0.0", CultureInfo.InvariantCulture) + " К";
+            return ((long)Math.Round(value)).ToString(CultureInfo.InvariantCulture);
         }
 
         private void DrawRiftProgress(Graphics g, int width, int height, double scale, int alpha)
@@ -888,126 +904,53 @@ namespace SuperD3Hud.Game
 
         private void DrawSkills(Graphics g, int width, int height, double scale, int alpha)
         {
+            if (SuppressSkillCooldowns) return;
+
             SkillSnapshot snapshot = _skills;
             if (snapshot == null) return;
 
             List<SkillCooldown> slots = snapshot.Skills;
             if (slots == null || slots.Count == 0) return;
 
-            // Only slots that actually have a known cooldown are drawn. A row of
-            // empty boxes tells the player nothing and looks like broken data.
-            List<SkillCooldown> shown = new List<SkillCooldown>();
+            float hScale = height > 0 ? height / 1080f : 1f;
+            float btnSize = 54f * hScale;
+            float halfBtn = btnSize * 0.5f;
+            float y = height - 77f * hScale;
+            Font timerFont = FontFor(Math.Max(10f, 15f * hScale * (float)scale), true);
+
             for (int i = 0; i < slots.Count; i++)
             {
                 SkillCooldown slot = slots[i];
-                if (slot.DurationSeconds > 0.001 || slot.RemainingSeconds > 0.001)
-                    shown.Add(slot);
-            }
-            if (shown.Count == 0) return;
-
-            float box = (float)(46 * scale);
-            float gap = (float)(7 * scale);
-            float totalWidth = shown.Count * box + (shown.Count - 1) * gap;
-            float startX = (width - totalWidth) / 2f;
-            float startY = height - box - (float)(52 * scale);
-
-            Font keyFont = FontFor((float)(10f * scale), true);
-            Font smallKeyFont = FontFor((float)(7.5f * scale), true);
-            Font timerFont = FontFor((float)(10.5f * scale), true);
-
-            for (int i = 0; i < shown.Count; i++)
-            {
-                SkillCooldown slot = shown[i];
-                float x = startX + i * (box + gap);
+                if (slot == null || slot.IsReady) continue;
 
                 SkillAnimState st;
                 _skillAnim.TryGetValue(slot.Slot, out st);
-
-                bool isReady = slot.IsReady;
                 double rem = st != null && st.Initialized ? st.DisplayRemaining : slot.RemainingSeconds;
-                double dur = slot.DurationSeconds > 0.001 ? slot.DurationSeconds : (st != null ? st.LastSnapshotDuration : 0.0);
-                double frac = !isReady && dur > 0.001
-                    ? Math.Min(1.0, Math.Max(0.0, rem / dur))
-                    : (!isReady ? Math.Min(1.0, Math.Max(0.0, slot.Fraction)) : 0.0);
+                if (rem <= 0.05) continue;
 
-                // Ready-flash pulse (350ms) when transitioning from on-cooldown to ready
-                double flashK = 0.0;
-                if (isReady && st != null)
+                // Map slot index directly onto Diablo III's real bottom skill bar.
+                float cxOffset;
+                switch (slot.Slot)
                 {
-                    double flashAge = _currentAnimSec - st.ReadyFlashStartSec;
-                    if (flashAge >= 0.0 && flashAge <= ReadyFlashDurationSec)
-                        flashK = Math.Sin((flashAge / ReadyFlashDurationSec) * Math.PI);
+                    case 0: cxOffset = -30.5f; break;   // LMB
+                    case 1: cxOffset = +32.0f; break;   // RMB
+                    case 2: cxOffset = -301.5f; break;  // Q / 1
+                    case 3: cxOffset = -234.0f; break;  // W / 2
+                    case 4: cxOffset = -167.0f; break;  // E / 3
+                    case 5: cxOffset = -100.0f; break;  // R / 4
+                    default: continue;
                 }
 
-                // Gothic dark-bronze beveled slot background
-                RectangleF slotRect = new RectangleF(x, startY, box, box);
-                using (LinearGradientBrush bg = new LinearGradientBrush(
-                    slotRect,
-                    Color.FromArgb(Clamp(alpha * 228 / 255, 0, 255), ObsidianTop),
-                    Color.FromArgb(Clamp(alpha * 242 / 255, 0, 255), ObsidianBottom),
-                    LinearGradientMode.Vertical))
-                {
-                    g.FillRectangle(bg, slotRect);
-                }
+                float x = width * 0.5f + cxOffset * hScale - halfBtn;
+                using (SolidBrush shade = new SolidBrush(Color.FromArgb(Clamp(alpha * 110 / 255, 0, 255), 8, 6, 5)))
+                    g.FillRectangle(shade, x + 2f, y + 2f, btnSize - 4f, btnSize - 4f);
 
-                // Smooth continuous cooldown sweep (from bottom up)
-                if (!isReady && frac > 0.001)
-                {
-                    float fill = (float)frac * (box - 4f);
-                    float sweepTop = startY + box - 2f - fill;
-                    using (SolidBrush shade = new SolidBrush(Color.FromArgb(Clamp(alpha * 165 / 255, 0, 255), 42, 24, 14)))
-                        g.FillRectangle(shade, x + 2f, sweepTop, box - 4f, fill);
-                    using (Pen edge = new Pen(Color.FromArgb(Clamp(alpha * 210 / 255, 0, 255), GoldHighlight), 1.3f))
-                        g.DrawLine(edge, x + 2f, sweepTop, x + box - 2f, sweepTop);
-                }
-
-                // Golden ready-flash interior wash
-                if (flashK > 0.001)
-                {
-                    int washA = Clamp((int)Math.Round(alpha * 0.42 * flashK), 0, 255);
-                    using (SolidBrush wash = new SolidBrush(Color.FromArgb(washA, ReadyFlashGold)))
-                        g.FillRectangle(wash, x + 2f, startY + 2f, box - 4f, box - 4f);
-                }
-
-                // Inner bronze bevel + outer hammered antique-gold border
-                using (Pen inner = new Pen(Color.FromArgb(Clamp(alpha * 220 / 255, 0, 255), InnerBevel), 1.1f))
-                    g.DrawRectangle(inner, x + 1.5f, startY + 1.5f, box - 3f, box - 3f);
-
-                Color outerCol = isReady ? AntiqueGold : Color.FromArgb(108, 84, 48);
-                using (Pen outer = new Pen(Color.FromArgb(Clamp(alpha * 230 / 255, 0, 255), outerCol), 1.3f))
-                    g.DrawRectangle(outer, x, startY, box, box);
-
-                // Golden ready-flash outer aura
-                if (flashK > 0.001)
-                {
-                    int auraA = Clamp((int)Math.Round(alpha * flashK), 0, 255);
-                    using (Pen aura = new Pen(Color.FromArgb(auraA, ReadyFlashGold), (float)(2.4 * scale)))
-                        g.DrawRectangle(aura, x - 1f, startY - 1f, box + 2f, box + 2f);
-                }
-
-                string key = slot.Key;
-                if (string.IsNullOrEmpty(key)) key = (slot.Slot + 1).ToString();
-
-                if (isReady)
-                {
-                    SizeF keySize = g.MeasureString(key, keyFont);
-                    Color kc = flashK > 0.001 ? ReadyFlashGold : IvoryText;
-                    DrawShadowText(g, key, keyFont, kc, alpha,
-                        x + (box - keySize.Width) * 0.5f, startY + (box - keySize.Height) * 0.5f, true);
-                }
-                else
-                {
-                    SizeF keySize = g.MeasureString(key, smallKeyFont);
-                    DrawShadowText(g, key, smallKeyFont, MutedStoneText, alpha,
-                        x + (box - keySize.Width) * 0.5f, startY + (float)(3 * scale), false);
-
-                    string text = rem >= 1.0
-                        ? ((int)Math.Ceiling(rem)).ToString()
-                        : Math.Max(0.1, rem).ToString("0.0", CultureInfo.InvariantCulture);
-                    SizeF size = g.MeasureString(text, timerFont);
-                    DrawShadowText(g, text, timerFont, ReadyFlashGold, alpha,
-                        x + (box - size.Width) * 0.5f, startY + (box - size.Height) * 0.5f + (float)(4 * scale), true);
-                }
+                string text = rem >= 1.0
+                    ? ((int)Math.Ceiling(rem)).ToString(CultureInfo.InvariantCulture)
+                    : Math.Max(0.1, rem).ToString("0.0", CultureInfo.InvariantCulture);
+                SizeF size = g.MeasureString(text, timerFont);
+                DrawShadowText(g, text, timerFont, IvoryText, alpha,
+                    x + (btnSize - size.Width) * 0.5f, y + (btnSize - size.Height) * 0.5f, true);
             }
         }
 

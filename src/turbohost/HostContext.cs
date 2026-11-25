@@ -25,6 +25,9 @@ namespace SuperD3Hud.TurboHost
             Inventory = new InventorySnapshot();
             Cooldowns = new Dictionary<int, double>();
             CooldownDurations = new Dictionary<int, double>();
+            FinishTicks = new Dictionary<int, int>();
+            SkillCharges = new Dictionary<int, int>();
+            LargeMapScale = 1f;
             MaxQuestProgress = 100d;
         }
 
@@ -151,6 +154,8 @@ namespace SuperD3Hud.TurboHost
         public bool WindowForeground { get; set; }
         /// <summary>True when the large full-screen map is currently open.</summary>
         public bool LargeMapOpen { get; set; }
+        /// <summary>User scale factor of the large full-screen map.</summary>
+        public float LargeMapScale { get; set; }
         /// <summary>Pixels per world unit used by the linear projection.</summary>
         public float WorldToScreenScale { get; set; }
 
@@ -171,6 +176,7 @@ namespace SuperD3Hud.TurboHost
         public Dictionary<int, double> Cooldowns { get; set; }
         public Dictionary<int, double> CooldownDurations { get; set; }
         public Dictionary<int, int> FinishTicks { get; set; }
+        public Dictionary<int, int> SkillCharges { get; set; }
         public int CurrentGameTick { get; set; }
 
         /// <summary>Game tick provider (60 ticks/second).</summary>
@@ -186,7 +192,7 @@ namespace SuperD3Hud.TurboHost
         /// <summary>Copies the current state of a game service.</summary>
         public void Update(GameService service, bool windowForeground,
                            int windowX, int windowY, int windowWidth, int windowHeight,
-                           bool largeMapOpen = false)
+                           bool largeMapOpen = false, float largeMapScale = 1f)
         {
             WindowForeground = windowForeground;
             WindowX = windowX;
@@ -194,6 +200,7 @@ namespace SuperD3Hud.TurboHost
             WindowWidth = windowWidth;
             WindowHeight = windowHeight;
             LargeMapOpen = largeMapOpen;
+            LargeMapScale = largeMapScale > 0.01f ? largeMapScale : 1f;
             WorldToScreenScale = windowHeight <= 0 ? 0f : windowHeight / 90f;
 
             if (service == null)
@@ -231,6 +238,7 @@ namespace SuperD3Hud.TurboHost
             Cooldowns = service.CooldownRemaining();
             CooldownDurations = service.CooldownDurations();
             FinishTicks = service.CooldownFinishTicks();
+            SkillCharges = service.SkillCharges();
             CurrentGameTick = (skills != null && skills.GameTick > 0) ? skills.GameTick : (service != null ? service.GameTick : 0);
             Revision++;
         }

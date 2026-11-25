@@ -105,14 +105,28 @@ namespace SuperD3Hud.TurboHost
         public ITexture InventorySetBackgroundLarge { get { return Placeholder("inventory-set-large"); } }
     }
 
-    /// <summary>Stat controller. The host does not profile plugins.</summary>
+    /// <summary>Stat controller exposing live damage-dealt DPS to TurboHUD plugins.</summary>
     public class HostStatController : IStatController
     {
+        private readonly HostContext _context;
         private readonly PerfCounter _render = new PerfCounter();
         private readonly PerfCounter _monsterHitpoints = new PerfCounter();
 
+        public HostStatController(HostContext context = null)
+        {
+            _context = context;
+        }
+
         public IPerfCounter RenderPerfCounter { get { return _render; } }
-        public IPerfCounter MonsterHitpointDecreasePerfCounter { get { return _monsterHitpoints; } }
+        public IPerfCounter MonsterHitpointDecreasePerfCounter
+        {
+            get
+            {
+                if (_context != null && _context.Actors != null)
+                    _monsterHitpoints.LastValue = _context.Actors.DamageDps;
+                return _monsterHitpoints;
+            }
+        }
     }
 
     /// <summary>Sound controller. Speech is disabled because the host ships no TTS voice.</summary>

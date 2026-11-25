@@ -165,6 +165,7 @@ namespace SuperD3Hud.TurboHost
         private IPlayerPowerInfo _powers;
         private IPlayerStatInfo _stats;
         private IPlayerDefenseInfo _defense;
+        private IHeroClassDefinition _heroClass;
 
         public HostPlayer(HostContext context, HostSnoController sno, float x, float y)
             : base(context, sno)
@@ -214,7 +215,14 @@ namespace SuperD3Hud.TurboHost
 
         public uint HeroId { get { return 0; } }
         public string HeroName { get { return ""; } }
-        public IHeroClassDefinition HeroClassDefinition { get { return HostStubs.Get<IHeroClassDefinition>(); } }
+        public IHeroClassDefinition HeroClassDefinition
+        {
+            get
+            {
+                if (_heroClass == null) _heroClass = new HostHeroClassDefinition(Context);
+                return _heroClass;
+            }
+        }
         public string BattleTagAbovePortrait { get { return ""; } }
         public bool CoordinateKnown { get { return Context != null && Context.PlayerKnown; } }
         public ISnoArea SnoArea { get { return null; } }
@@ -332,6 +340,85 @@ namespace SuperD3Hud.TurboHost
         }
     }
 
+    internal sealed class HostHeroClassDefinition : IHeroClassDefinition
+    {
+        private readonly HostContext _context;
+
+        public HostHeroClassDefinition(HostContext context)
+        {
+            _context = context;
+        }
+
+        public HeroClass HeroClass
+        {
+            get
+            {
+                SkillSnapshot sk = _context == null ? null : _context.Skills;
+                if (sk != null)
+                {
+                    switch (sk.PrimaryResourceType)
+                    {
+                        case 0: return HeroClass.WitchDoctor;
+                        case 1: return HeroClass.Wizard;
+                        case 2: return HeroClass.Barbarian;
+                        case 3: return HeroClass.Monk;
+                        case 5: return HeroClass.DemonHunter;
+                        case 7: return HeroClass.Crusader;
+                        case 8: return HeroClass.Necromancer;
+                    }
+                    switch (sk.PlayerSno)
+                    {
+                        case 74706:
+                        case 75207: return HeroClass.DemonHunter;
+                        case 3301:
+                        case 3285: return HeroClass.Barbarian;
+                        case 6544:
+                        case 6526: return HeroClass.Wizard;
+                        case 6485:
+                        case 6481: return HeroClass.WitchDoctor;
+                        case 4717:
+                        case 4721: return HeroClass.Monk;
+                        case 238284:
+                        case 238286: return HeroClass.Crusader;
+                        case 454994:
+                        case 454991: return HeroClass.Necromancer;
+                    }
+                }
+                return HeroClass.DemonHunter;
+            }
+        }
+
+        public string Code { get { return HeroClass.ToString(); } }
+        public string FullCode { get { return Code; } }
+        public string Name { get { return Code; } }
+        public ActorSnoEnum MaleActorSno { get { return default(ActorSnoEnum); } }
+        public ActorSnoEnum FemaleActorSno { get { return default(ActorSnoEnum); } }
+        public bool IsRanged { get { HeroClass hc = HeroClass; return hc == HeroClass.DemonHunter || hc == HeroClass.Wizard || hc == HeroClass.WitchDoctor; } }
+
+        public string PrimaryResourceName
+        {
+            get
+            {
+                switch (HeroClass)
+                {
+                    case HeroClass.Barbarian: return "Fury";
+                    case HeroClass.Crusader: return "Wrath";
+                    case HeroClass.DemonHunter: return "Hatred";
+                    case HeroClass.Monk: return "Spirit";
+                    case HeroClass.Necromancer: return "Essence";
+                    case HeroClass.WitchDoctor: return "Mana";
+                    case HeroClass.Wizard: return "Arcane";
+                    default: return "Resource";
+                }
+            }
+        }
+
+        public string SecondaryResourceName
+        {
+            get { return HeroClass == HeroClass.DemonHunter ? "Discipline" : ""; }
+        }
+    }
+
     internal sealed class HostPlayerStatInfo : IPlayerStatInfo
     {
         private readonly HostContext _context;
@@ -355,38 +442,65 @@ namespace SuperD3Hud.TurboHost
             return value > float.MaxValue ? float.MaxValue : (float)value;
         }
 
-        public float ResourceMaxArcane { get; set; }
-        public float ResourceMaxSpirit { get; set; }
-        public float ResourceMaxFury { get; set; }
-        public float ResourceMaxMana { get; set; }
-        public float ResourceMaxHatred { get; set; }
-        public float ResourceMaxDiscipline { get; set; }
-        public float ResourceMaxWrath { get; set; }
-        public float ResourceMaxEssence { get; set; }
-        public float ResourceCurArcane { get; set; }
-        public float ResourceCurSpirit { get; set; }
-        public float ResourceCurFury { get; set; }
-        public float ResourceCurMana { get; set; }
-        public float ResourceCurHatred { get; set; }
-        public float ResourceCurDiscipline { get; set; }
-        public float ResourceCurWrath { get; set; }
-        public float ResourceCurEssence { get; set; }
-        public float ResourcePctArcane { get; set; }
-        public float ResourcePctSpirit { get; set; }
-        public float ResourcePctFury { get; set; }
-        public float ResourcePctMana { get; set; }
-        public float ResourcePctHatred { get; set; }
-        public float ResourcePctDiscipline { get; set; }
-        public float ResourcePctWrath { get; set; }
-        public float ResourcePctEssence { get; set; }
-        public float ResourceRegArcane { get; set; }
-        public float ResourceRegSpirit { get; set; }
-        public float ResourceRegFury { get; set; }
-        public float ResourceRegMana { get; set; }
-        public float ResourceRegHatred { get; set; }
-        public float ResourceRegDiscipline { get; set; }
-        public float ResourceRegWrath { get; set; }
-        public float ResourceRegEssence { get; set; }
+        private float GetTypedCur(int resourceType)
+        {
+            SkillSnapshot sk = _context == null ? null : _context.Skills;
+            if (sk == null) return 0f;
+            if (sk.PrimaryResourceType == resourceType && sk.PrimaryResource >= 0d) return (float)sk.PrimaryResource;
+            if (sk.SecondaryResourceType == resourceType && sk.SecondaryResource >= 0d) return (float)sk.SecondaryResource;
+            return 0f;
+        }
+
+        private float GetTypedMax(int resourceType)
+        {
+            SkillSnapshot sk = _context == null ? null : _context.Skills;
+            if (sk == null) return 0f;
+            if (sk.PrimaryResourceType == resourceType && sk.PrimaryResourceMax >= 0d) return (float)sk.PrimaryResourceMax;
+            if (sk.SecondaryResourceType == resourceType && sk.SecondaryResourceMax >= 0d) return (float)sk.SecondaryResourceMax;
+            return 0f;
+        }
+
+        private float GetTypedReg(int resourceType)
+        {
+            SkillSnapshot sk = _context == null ? null : _context.Skills;
+            if (sk == null) return 0f;
+            if (sk.PrimaryResourceType == resourceType && sk.PrimaryResourceRegen > 0d) return (float)sk.PrimaryResourceRegen;
+            if (sk.SecondaryResourceType == resourceType && sk.SecondaryResourceRegen > 0d) return (float)sk.SecondaryResourceRegen;
+            return 0f;
+        }
+
+        public float ResourceMaxArcane { get { return GetTypedMax(1); } set { } }
+        public float ResourceMaxSpirit { get { return GetTypedMax(3); } set { } }
+        public float ResourceMaxFury { get { return GetTypedMax(2); } set { } }
+        public float ResourceMaxMana { get { return GetTypedMax(0); } set { } }
+        public float ResourceMaxHatred { get { return GetTypedMax(5); } set { } }
+        public float ResourceMaxDiscipline { get { return GetTypedMax(6); } set { } }
+        public float ResourceMaxWrath { get { return GetTypedMax(7); } set { } }
+        public float ResourceMaxEssence { get { return GetTypedMax(8); } set { } }
+        public float ResourceCurArcane { get { return GetTypedCur(1); } set { } }
+        public float ResourceCurSpirit { get { return GetTypedCur(3); } set { } }
+        public float ResourceCurFury { get { return GetTypedCur(2); } set { } }
+        public float ResourceCurMana { get { return GetTypedCur(0); } set { } }
+        public float ResourceCurHatred { get { return GetTypedCur(5); } set { } }
+        public float ResourceCurDiscipline { get { return GetTypedCur(6); } set { } }
+        public float ResourceCurWrath { get { return GetTypedCur(7); } set { } }
+        public float ResourceCurEssence { get { return GetTypedCur(8); } set { } }
+        public float ResourcePctArcane { get { return Percent(ResourceCurArcane, ResourceMaxArcane); } set { } }
+        public float ResourcePctSpirit { get { return Percent(ResourceCurSpirit, ResourceMaxSpirit); } set { } }
+        public float ResourcePctFury { get { return Percent(ResourceCurFury, ResourceMaxFury); } set { } }
+        public float ResourcePctMana { get { return Percent(ResourceCurMana, ResourceMaxMana); } set { } }
+        public float ResourcePctHatred { get { return Percent(ResourceCurHatred, ResourceMaxHatred); } set { } }
+        public float ResourcePctDiscipline { get { return Percent(ResourceCurDiscipline, ResourceMaxDiscipline); } set { } }
+        public float ResourcePctWrath { get { return Percent(ResourceCurWrath, ResourceMaxWrath); } set { } }
+        public float ResourcePctEssence { get { return Percent(ResourceCurEssence, ResourceMaxEssence); } set { } }
+        public float ResourceRegArcane { get { return GetTypedReg(1); } set { } }
+        public float ResourceRegSpirit { get { return GetTypedReg(3); } set { } }
+        public float ResourceRegFury { get { return GetTypedReg(2); } set { } }
+        public float ResourceRegMana { get { return GetTypedReg(0); } set { } }
+        public float ResourceRegHatred { get { return GetTypedReg(5); } set { } }
+        public float ResourceRegDiscipline { get { return GetTypedReg(6); } set { } }
+        public float ResourceRegWrath { get { return GetTypedReg(7); } set { } }
+        public float ResourceRegEssence { get { return GetTypedReg(8); } set { } }
         public float CooldownReduction { get; set; }
         public float ResourceCostReduction { get; set; }
         public float ResourceCurPri { get { return _context == null || _context.Skills == null ? _resourceCurPri : Resource(_context.Skills.PrimaryResource); } set { _resourceCurPri = value; } }
@@ -395,8 +509,8 @@ namespace SuperD3Hud.TurboHost
         public float ResourceMaxSec { get { return _context == null || _context.Skills == null ? _resourceMaxSec : Resource(_context.Skills.SecondaryResourceMax); } set { _resourceMaxSec = value; } }
         public float ResourcePctPri { get { return Percent(ResourceCurPri, ResourceMaxPri); } set { } }
         public float ResourcePctSec { get { return Percent(ResourceCurSec, ResourceMaxSec); } set { } }
-        public float ResourceRegPri { get; set; }
-        public float ResourceRegSec { get; set; }
+        public float ResourceRegPri { get { return _context == null || _context.Skills == null ? 0f : (float)_context.Skills.PrimaryResourceRegen; } set { } }
+        public float ResourceRegSec { get { return _context == null || _context.Skills == null ? 0f : (float)_context.Skills.SecondaryResourceRegen; } set { } }
         public float MainStat { get; set; }
         public float Strength { get; set; }
         public float Dexterity { get; set; }
@@ -552,7 +666,13 @@ namespace SuperD3Hud.TurboHost
 
         public bool IsOnCooldown
         {
-            get { return GetRemainingSeconds() > 0.05; }
+            get
+            {
+                double rem = GetRemainingSeconds();
+                if (rem <= 0.05) return false;
+                int cur = GetCurrentGameTick();
+                return cur <= 0 || CooldownFinishTick > cur;
+            }
         }
 
         public int CooldownFinishTick
@@ -605,7 +725,16 @@ namespace SuperD3Hud.TurboHost
         public float ElementalDamageBonus { get { return 0f; } }
         public bool BuffIsActive { get { return false; } }
         public IBuff Buff { get { return null; } }
-        public int Charges { get { return 0; } }
+        public int Charges
+        {
+            get
+            {
+                if (_player == null || _player.PlayerContext == null || _player.PlayerContext.SkillCharges == null)
+                    return 0;
+                int charges;
+                return _player.PlayerContext.SkillCharges.TryGetValue(_slot, out charges) ? charges : 0;
+            }
+        }
         public IWatch LastUsed { get { return null; } }
         public IWatch LastReleased { get { return null; } }
         public double RemainingBuffTime() { return 0.0; }

@@ -16,6 +16,7 @@ namespace SuperD3Hud.Game
         public float X;
         public float Y;
         public float Health;
+        public float MaxHealth;
         /// <summary>Champion, rare elite, unique or rift guardian.</summary>
         public bool IsElite;
         /// <summary>Rift guardian or an explicitly marked boss.</summary>
@@ -87,6 +88,8 @@ namespace SuperD3Hud.Game
         public double DamageTotal;
         /// <summary>The damage per second of the last seconds.</summary>
         public double DamageDps;
+        /// <summary>Peak DPS recorded during the current encounter.</summary>
+        public double DamagePeakDps;
         /// <summary>The players with their damage.</summary>
         public List<DamageEntry> DamageEntries = new List<DamageEntry>();
         public string Status = "";
@@ -167,14 +170,21 @@ namespace SuperD3Hud.Game
     {
         public List<SkillCooldown> Skills = new List<SkillCooldown>();
         public int GameTick;
+        public int PlayerSno;
         public int[] EquippedPowerSnos = new int[6];
         public int[] EquippedRunes = new int[6];
+        /// <summary>Primary resource type id (-1 when unknown).</summary>
+        public int PrimaryResourceType = -1;
         /// <summary>Primary resource, e.g. fury or mana; negative when unknown.</summary>
         public double PrimaryResource = -1;
         public double PrimaryResourceMax = -1;
+        public double PrimaryResourceRegen;
+        /// <summary>Secondary resource type id (-1 when unknown).</summary>
+        public int SecondaryResourceType = -1;
         /// <summary>Secondary resource, e.g. discipline; negative when unknown.</summary>
         public double SecondaryResource = -1;
         public double SecondaryResourceMax = -1;
+        public double SecondaryResourceRegen;
         /// <summary>Current health; negative when unknown.</summary>
         public double Health = -1;
         public double HealthMax = -1;
