@@ -1,623 +1,274 @@
 # SuperD3Hud
 
-Локальный лаунчер, менеджер плагинов и собственная карта для Diablo III.
-Объединяет запуск игры, управление HUD-движком, наложение карты и движок
-макросов в одном окне.
+**English** | [Русский](README.ru.md)
 
-> **Важно.** SuperD3Hud — самостоятельный проект. Он не расшифровывает закрытые
-> плагины, не подменяет проверку подписки и не обращается к серверам сторонних
-> разработчиков. Лаунчер работает с тем, что уже установлено на компьютере, и
-> управляет только открытыми `.cs`-плагинами. Коммерческие плагины сторонних
-> авторов требуют действующей лицензии у них.
+A standalone local launcher, plugin host, Diablo III-styled map overlay, built-in HUD, and smart town macro engine for **Diablo III** (`2.8.0.99920`). Combines game launching, TurboHUD-compatible `.cs` plugins, 60 FPS overlay rendering, and configurable town/rift automation in a single portable application.
 
-## Что нового в 1.8.0
+> **Important Notice.** SuperD3Hud is an independent project. It does not decrypt protected plugins, does not bypass subscription or license checks, and never contacts any third-party servers. Everything runs locally on your machine and manages open `.cs` plugins only. Commercial third-party plugins still require a valid license from their respective authors.
+>
+> *Note on UI localization: the desktop launcher interface and default macro/HUD labels are currently in Russian, while all source code, CLI diagnostics, and TurboHUD plugin APIs are in standard English / C#.*
 
-- **Оформление в стиле Diablo III и плавные 60 FPS.**
-  - Наложение карты рисуется по запечённому контуру: тёплый пергаментный пол,
-    антично-золотые стены и колонны без синих прямоугольников приближения и
-    внутренних швов навигационной сетки, а миникарта мягко растворяется по краям.
-  - Позиции героя, монстров, добычи и индикаторы прогресса сглаживаются по
-    таймеру `Stopwatch` (60 Гц, мгновенный перенос при телепорте и смене зоны),
-    без покадровых аллокаций памяти оверлея.
-  - Лаунчер и встроенный HUD переведены на обсидианово-бронзовую тему Diablo III;
-    для хоста TurboHUD добавлены привязки игровых панелей (сферы здоровья и
-    ресурса, задержка сети, портрет, часы) и точный расчёт ширины кириллических
-    меток.
-- **Умная городская автоматизация и защита предметов.**
-  - Поддержка любых соотношений сторон (16:9, 21:9, 16:10) с якорными
-    командами `MOVEL`, `MOVER`, `MOVEC`.
-  - Умный разбор у кузнеца (`SMARTSALVAGE` — массовый разбор белого/синего/жёлтого
-    + наковальня для разрешённых легендарок), умный сброс (`SMARTDROP`),
-    гемблинг у Кадалы до порога свободных слотов (`SMARTGAMBLE`), открытие
-    обычных и усиленных порталов (`OPENRIFT`, `OPENGR`, `ACCEPTGR`), прокачка
-    камней (`GEMUPS`) и Куб Канаи (`CUBEUPGRADE`) с защитой Древних,
-    Первозданных и заблокированных колонок рюкзака.
-  - Мгновенная остановка макроса при нажатии `Esc` или ручном сдвиге мыши
-    более чем на 180 пикселей.
-- **Переносимый установщик.** Появился файл `SuperD3Hud-Setup.exe`: это один
-  файл, который распаковывает рядом с собой всё, что нужно — сам лаунчер,
-  библиотеки плагинов TurboHUD, компилятор Roslyn (он нужен, чтобы
-  `.cs`-плагины собирались прямо на компьютере, где их запускают), примеры
-  плагинов и настройки по умолчанию. Путей вне своей папки программа не
-  использует, поэтому папку можно скопировать на любой компьютер: игра и
-  лаунчер найдут друг друга сами, а форк TurboHUD работает сразу.
-- **Большая карта наконец-то совпадает с картой игры.** Наложение на карту по Tab
-  центрируется на герое — ровно так же, как карта самой игры — и масштабируется от
-  высоты окна, поэтому совмещение не зависит от разрешения экрана. Масштаб
-  подобран по снимку экрана: углы нашей геометрии ложатся на контур, который
-  нарисовала игра. Отдельно исправлена причина «гигантской проекции»: при
-  первом запуске программа включала режим «вписать всю карту в экран» — это
-  статичная картинка без слежения за героем, и масштаб у неё совсем другой.
-  Теперь по умолчанию режим слежения, а масштаб и смещение подстраиваются на
-  вкладке **Карта**, если в игре выбран другой уровень приближения.
-- **Карта показывает весь уровень, а не только текущую комнату.** Раньше
-  наложение рисовало только те сцены, что игра держит загруженными сейчас, —
-  то есть комнату, где стоит герой. Теперь добавляются и те куски уровня,
-  которые игра помнит как посещённые: их навигационная сетка ещё лежит в
-  памяти, а положение куска берётся из границ сцены, поэтому пол и стены
-  совпадают с тем, что нарисовала игра.
-- **Пилоны больше не засоряют карту.** На карте появлялись подписи «Пилон» у
-  десятков предметов: тип объекта определялся неверно, и обычная добыча
-  считалась интерактивной. Теперь отбираются только объекты уровня (пилоны,
-  алтари, двери), а подпись «Выход» появляется только у выхода из портала:
-  лаунчер узнаёт его по тому, что портал появляется в портале сразу после
-  смерти стража. Никаких номеров объектов конкретной версии игры не
-  зашито — правило работает на любой сборке.
-- **Плагины в переносимой установке.** Папка плагинов и компилятор лежат
-  рядом с программой, а не в системных каталогах, поэтому установку можно
-  переносить целиком. Список включённых плагинов TurboHUD (37 включено, 31
-  выключено) уезжает вместе с установкой.
+## What's New in 1.8.0
 
-## Что нового в 1.7.0
+- **Diablo III Visual Theme & Smooth 60 FPS Animations**
+  - **Seamless parchment-and-gold map silhouette:** replaced cold blue approximation rectangles and internal navmesh tile seams with a baked world-space rasterized silhouette (`LockBits` morphological contour pass) featuring warm smoky parchment floors, crisp dark obsidian halos, antique-gold walls/pillars, and a soft circular minimap edge vignette.
+  - **Critically-damped 60 FPS smoothing:** player, monster, and loot tracking use high-resolution `Stopwatch` exponential smoothing (with instant snapping on teleports/zone transitions > 35 yards) instead of overshoot-prone linear extrapolation.
+  - **Zero-allocation gothic HUD overlay:** `HudOverlay` now reuses a persistent DIB-backed layered window surface across frames (eliminating per-frame full-screen bitmap allocations), with smooth Rift/Greater Rift progress bar damping + sheen sweep, 100% Rift Guardian glow pulse, and skill ready-flash animations.
+  - **Diablo III launcher theme & TurboHUD UI calibration:** updated launcher controls (`Ui`, `DashboardPage`, `MapPage`) to an obsidian and hammered bronze-gold palette; added accurate resolution-scaled UI rectangles for Health/Resource globes, latency meter, portrait-bottom, and clock elements, and fixed bold Cyrillic text width measurement in `GroundLabelDecorator` boxes.
+- **Smart Memory-Aware Town Automation & Item Protection**
+  - **Aspect-ratio-aware macro anchoring:** added `MOVEL` (left-anchored dialogs: Blacksmith, Obelisk, Kadala, Urshi, Cube), `MOVER` (right-anchored inventory), and `MOVEC` (centered popups/drop point) so scripts scale cleanly across 16:9, 16:10, and 21:9 aspect ratios.
+  - **Smart macro DSL commands:** added memory-aware auto-salvage (`SMARTSALVAGE`), smart drop (`SMARTDROP`), Kadala slot-threshold gambling (`SMARTGAMBLE`), normal/Empowered portal opening & acceptance (`OPENRIFT`, `OPENGR`, `ACCEPTGR`), gem upgrades (`GEMUPS`), and Kanai's Cube rare upgrades (`CUBEUPGRADE`), protecting Ancient, Primal, and locked left/right backpack columns.
+  - **Emergency abort:** pressing `Esc` or moving the mouse more than `180 px` away from the macro's cursor target cancels running macro loops immediately.
+- **Portable Installer (`SuperD3Hud-Setup.exe`)**
+  - Single-file self-extracting installer bundling the launcher, `Turbo.Plugins.dll`, `Turbo.Plugins.Default.dll`, the Roslyn compiler (for local `.cs` plugin compilation), demo plugins, and default settings. Everything stays inside the chosen folder with no external registry or system paths required.
+- **Accurate Tab Large Map & Full Level Reveal**
+  - The full-screen (`Tab`) overlay centers on the hero and scales by window height to match the native Diablo III map overlay across resolutions, and combines active scenes with reveal-cache geometry for visited areas.
+  - Filtered interactive markers strictly to level gizmos (pylons, shrines, doors) and confirmed rift exits, preventing ground loot from cluttering the map.
 
-- **Карта стала тише.** Синяя заливка наложения стала заметно бледнее (и берётся
-  минимум прозрачности), поэтому карта самой игры видна под ней и ориентиры не
-  теряются. Контур проходимой зоны остался контрастным.
-- **Интерактивные объекты подсвечены.** Выход из портала и пилон Greater Rift
-  рисуются на карте пульсирующим кольцом с подписью («Выход», «Пилон») — на
-  миникарте, на большой карте по Tab и в отдельной панели. Объекты читаются из
-  контейнера актёров; то, что ходит вместе с героем (питомец), отбрасывается.
-- **Метки на большой карте крупнее** и идут по сглаженным координатам, так что
-  при движении они не дёргаются.
-- **Убран бежевый квадрат по центру экрана.** Он появлялся после портала: это
-  панель плагина TurboHUD «NotifyAtRiftPercentage» — в оригинале он рисуется
-  залитым прямоугольником и закрывает свой же текст. Плагин выключен, прогресс
-  портала и так показывает наш HUD.
-- **Счётчик урона (DPS).** Слева появляется панель, как в TurboHUD: «Урон
-  группы», урон в секунду и строка на каждого игрока с его долей. Своя строка
-  «Вы» есть всегда, даже если урона ноль — так видно, что били не вы. Панель
-  показывается, пока идёт бой, и прячется через 8 секунд после последнего
-  удара. Игра не отдаёт события урона, поэтому лаунчер следит за здоровьем
-  монстров: каждое падение здоровья — это урон, а исчезнувший монстр умер с
-  тем здоровьем, которое у него было. Урон не может превысить здоровье
-  монстра, поэтому цифры не раздуваются. Урон засчитывается тому игроку,
-  который стоит ближе всего к монстру; остальные члены группы читаются из
-  контейнера актёров и подписаны «Союзник 1», «Союзник 2». Галочка
-  «Счётчик урона» — на вкладке **HUD на экране**.
-- **Убран мусор поверх игры.** Отладочные плагины TurboHUD (счётчик FPS,
-  счётчик памяти и часы, которые у нас рисовались в углу экрана поверх игрового
-  интерфейса) выключены по умолчанию. Счётчик опыта тоже: хост не читает опыт
-  из игры, поэтому он показывал одни нули. Здоровье персонажа больше не
-  пишется поверх панели навыков — оно и так есть на глобусе.
-- **Кругов над мобами больше не сносит.** Земля в игре сжата слабее, чем
-  считалось раньше: коэффициент исправлен по замерам с экрана, поэтому круг
-  ложится под ноги моба, а не ниже его.
+<details>
+<summary>Earlier Changelog (1.7.0 – 1.5.0)</summary>
 
-## Что нового в 1.6.0
+### 1.7.0
+- Added a TurboHUD-style **Group Damage Meter** (total damage, DPS, and per-player damage share estimated from monster HP drops) and rift exit / pylon pulsing markers.
+- Recalibrated world-to-ground ellipse compression so circles align directly under monsters' feet.
+- Disabled noisy debug overlays (FPS/memory/experience zeros and overlapping centered rift notifications) by default.
 
-- **Простой режим.** В меню появилось пять основных разделов: **Обзор**, **Карта**,
-  **HUD на экране**, **Плагины**, **Макросы**. Остальные страницы (профили,
-  настройки HUD, файлы HUD, справка) спрятаны за галочкой **Расширенные
-  настройки** — её состояние запоминается в `settings.ini`.
-- **Плагины без догадок.** У каждого списка (плагины SuperD3Hud, плагины
-  TurboHUD, движок HUD) появились поиск по названию и описанию, галочка
-  включения прямо в строке и подсказка с полным описанием. Строки с ошибками
-  сборки выделены красным, выключенные приглушены. У плагинов TurboHUD, у
-  которых нет своего описания, оно собирается по имени класса.
-- **Переработанный редактор макросов.** Слева — список горячих клавиш с
-  галочками (включить или выключить привязку, не заходя в настройки), справа —
-  форма с действием, клавишей и модификаторами. Клавиша снимается щелчком по
-  полю, Backspace очищает её. Кнопки **Сохранить**, **Новая запись** и
-  **Удалить** делают ровно то, что написано, а сценарий переехал в отдельную
-  панель «Сценарий действия (необязательно)».
-- **Плавное движение.** Позиция игрока читается 60 раз в секунду и
-  интерполируется между отсчётами, позиции монстров и добычи продолжаются
-  между опросами. Маркеры и круги больше не дёргаются и не отстают от мобов.
-- **Быстрые кадры.** Наложения рисуются прямо в память окна: раньше каждый
-  кадр копировал весь экран и пересчитывал альфу по пикселям. Теперь кадр
-  стоит в разы меньше, а таймер обновления работает на 60 Гц.
-- **Круги под мобами.** Проекция мира пересчитана по замерам с экрана: земля в игре
-  сжата слабее, чем считалось раньше, поэтому круги под мобами падали ниже
-  моба (у элиты рядом с героем ошибка была около 120 пикселей). Теперь круг
-  ложится на землю под ногами моба, и камера смещена так же, как в игре.
-- **Счётчик урона** — панель слева во время боя: общий урон, урон в секунду и
-  строка на каждого игрока (подробности в разделе про 1.7.0).
+### 1.6.0
+- Added **Simple Mode** (5 core tabs: Dashboard, Map, Screen HUD, Plugins, Macros) with **Advanced Mode** toggle for Profiles, `hud.ini`, XML/Pickit files, and About.
+- Redesigned the Plugins search/toggle workflow and the split Hotkey + Script Macros editor.
+- Added 60 Hz layered direct-memory surface rendering and player/marker smoothing.
 
-## Что нового в 1.5.2
+### 1.5.0 – 1.5.2
+- Built an independent, open-interface **TurboHUD plugin API host** (`Turbo.Plugins.dll` + `Turbo.Plugins.Default.dll`) supporting `IAfterCollectHandler`, `IBeforeRenderHandler`, `IInGameTopPainter`, and `IInGameWorldPainter` without `TurboHUD.exe`.
+- Fixed 64-bit double-indirection actor container reading, human-readable item/power names, internal buff filtering, `--turbohud-live`, `--hud-preview`, and `--map-preview`.
 
-- Исправлена карта, которая показывала только отдельные рамки сцен. Исправлено
-  чтение MeshMinX/MeshMinY сцены (смещение `0x0FC` вместо `0x100`), а если
-  navmesh-ресурс ещё не доступен, строится цельный приближённый участок по
-  проверенным мировым границам.
-- Дублирующие рамки reveal-cache для уже активных сцен больше не рисуются.
-- В статусе карты видно, когда используется приближённая геометрия.
+</details>
 
-## Что нового в 1.5.1
+## Features
 
-- **Исправлено чтение актёров.** Контейнер актёров читался по одинарному
-  указателю, из-за чего плагины TurboHUD видели пустой мир: «нет данных»,
-  ноль монстров и предметов. Теперь используется та же двойная цепочка, что и
-  в проверенном чтении позиции игрока, поэтому хосту доступны игрок, монстры,
-  добыча и рюкзак.
-- **Читаемые имена.** Баффы, монстры и предметы получают понятные подписи из
-  публичного каталога API вместо `Generic_BanterCooldown` и `Unique_Mace_2H_001_x1`.
-- **Служебные записи скрыты.** Внутренние флаги игры (кулдауны реплик, флаги
-  неуязвимости, счётчики событий) больше не засоряют список баффов.
-- **Рабочая папка без демо-плагинов.** `plugins-turbohud` создаётся с короткой
-  инструкцией, а примеры по этапам API лежат в `examples\turbohud`. Раньше
-  пять демонстрационных плагинов писали отладочные строки поверх игры.
-- **`--turbohud-live`** — проверка хоста на запущенной игре: печатает то, что
-  видит плагин (игрок, монстры, предметы, рюкзак).
-- **Исправлен `--hud-preview` и `--map-preview`** без аргумента.
+- **Dashboard** — Auto-detects Diablo III and any optional external HUD engine, launches either or both, and displays live process, build, and map reader status.
+- **Map Overlay** — Standalone read-only memory reader supporting native minimap overlay (click-through), movable panel mode, and `Tab` full-screen map mode (or manual `F9` toggle) without code injection or external engines.
+- **Built-in HUD Overlay** — Independent HUD showing active buffs (with stacks and Convention of Elements rotation), skill cooldowns, health, backpack slot count, damage meter, rift progress bar, elite/boss circles, affix badges, and legendary loot indicators.
+- **Plugins Manager** — Separate searchable lists with checkboxes, descriptions, notes, and per-plugin JSON settings for:
+  - **SuperD3Hud local plugins** (`plugins-local\*.cs`, inheriting `HudPlugin`)
+  - **TurboHUD plugins** (`plugins-turbohud\*.cs` + built-in default plugins compiled via Roslyn)
+  - **External HUD engine plugins** (move between `plugins` and `plugins.disabled`, import user `.cs` files)
+- **Macros & Smart Town Automation** — Global hotkeys (`RegisterHotKey`), aspect-ratio-aware script commands, humanized 1–5 ms click jitter, memory-aware item protection (Ancient/Primal + locked backpack columns), and instant Esc/mouse-move abort.
+- **HUD Config & Files** — Optional editors for `hud.ini` (with backups and `app.config` Roslyn path repair), `config.xml`, `hotkeys.xml`, and `pickit_sc_70.ini` / `pickit_hc_70.ini`.
+- **Profiles & Tray** — Local ZIP profile import/export with zero cloud dependencies, plus minimize-to-tray support while keeping global hotkeys active.
 
-## Что нового в 1.5.0
+The only optional network request is checking public GitHub Releases on your configured repository. There is no telemetry, no analytics, and no account login. All settings stay in `config/` next to `SuperD3Hud.exe`.
 
-- Встроен независимый хост публичного plugin-API TurboHUD: собственные
-  `Turbo.Plugins.dll` и `Turbo.Plugins.Default.dll`, папка `plugins-turbohud`,
-  хуки `AfterCollect`, `BeforeRender`, `PaintTopInGame`, `PaintWorld`.
-- Полный `IController`: игра, игрок, монстры, предметы, SNO-каталоги, инвентарь,
-  ввод, очередь, сцена, избегание, взаимодействие, цели и запросы.
-- Каталоги покрывают 11 327 записей предметов, сил, квестов и атрибутов;
-  безопасные заглушки не дают плагинам падать на неподдерживаемых полях.
-- Команда `--turbohud` для проверки загрузки и отрисовки плагинов.
-- Четыре демонстрационных плагина по этапам API.
+## Requirements
 
-## Возможности
+- Windows 10 / Windows 11 (x64)
+- .NET Framework 4.8 (built into Windows)
+- Diablo III x64 client (build `2.8.0.99920` for memory features; game path can be auto-detected or browsed manually)
+- Optional: a separate external HUD engine executable if you want to manage it through the launcher
 
-- **Обзор** — автопоиск Diablo III и HUD-движка, запуск игры, HUD или всего
-  сразу, остановка HUD, живой статус процессов и карты.
-- **Карта** — наложение карты на собственном ридере памяти игры. Работает
-  поверх нативной миникарты, отдельной панелью и на большой карте по M.
-  Не требует HUD-движка, сети и внедрения кода.
-- **Оверлей HUD** — собственный HUD вместо стороннего движка: список активных
-  баффов, кулдауны навыков, здоровье, счётчик рюкзака, метки элиты, боссов и
-  легендарной добычи на карте.
-- **Настройки HUD** — редактирование `hud.ini` (язык, сервер, кэш, PTR, DX10,
-  Cloud и любые другие ключи секции `[config]`), резервные копии, ремонт пути
-  Roslyn в `app.config`.
-- **Файлы HUD** — правка `config\config.xml` (FPS, автоскрытие, TCP/HTTP-сервер,
-  тема), `config\hotkeys.xml` (горячие клавиши самого HUD) и фильтра лута
-  `pickit_sc_70.ini` / `pickit_hc_70.ini`.
-- **Плагины** — три независимых списка с поиском и галочками:
-  - **Плагины SuperD3Hud** — собственный движок SuperD3Hud. Файлы `.cs` из папки
-    `plugins-local` компилируются и выполняются самим лаунчером, без стороннего
-    HUD. Плагин наследует `HudPlugin` и получает состояние игры, журнал,
-    собственные настройки и поверхность для рисования.
-  - **Плагины TurboHUD** — `.cs` для публичного API TurboHUD: тот же набор
-    настроек, но совместимость с API.
-  - **Движок HUD** — `.cs` установленного HUD-движка: включение и отключение
-    переносом между `plugins` и `plugins.disabled`, импорт, заметки, JSON.
-  - У каждого плагина есть понятное описание. Оно берётся из комментария класса,
-    встроенного справочника или собирается по имени класса и хранится в
-    `config\plugin_descriptions.json` — файл можно править, свои формулировки
-    имеют приоритет.
-- **Макросы** — глобальные горячие клавиши и редактируемые сценарии:
-  разбор предметов, сброс инвентаря, гемблинг, спам ЛКМ, открытие Greater Rift,
-  прокачка камней, выход из игры, пауза.
-- **Профили** — экспорт и импорт всех настроек в один zip-файл. Локально, без
-  облака и аккаунта.
-- **Трей** — сворачивание в трей, горячие клавиши продолжают работать.
+## Installation (Portable)
 
-Единственный сетевой запрос — необязательная проверка обновлений на GitHub
-(только чтение публичного списка релизов одного репозитория). Телеметрии и
-авторизации нет. Всё хранится в папке `config` рядом с `SuperD3Hud.exe`.
+1. Copy `SuperD3Hud-Setup.exe` into any folder (e.g. `C:\SuperD3Hud`).
+2. Run it to unpack the launcher, `Turbo.Plugins.dll`, `Turbo.Plugins.Default.dll`, SharpDX libraries, bundled Roslyn compiler, examples, and default configuration in place.
+3. Launch Diablo III and play — the launcher finds the game automatically and compiles local `.cs` plugins using the bundled compiler.
 
-## Требования
-
-- Windows 10/11 (x64).
-- .NET Framework 4.8 (есть в Windows по умолчанию).
-- Diablo III (путь можно указать вручную).
-- HUD-движок — по желанию. Лаунчер запускает любой исполняемый файл, который
-  вы укажете; без него доступны карта, макросы, профили и работа с файлами.
-
-## Установка
-
-1. Скопируйте `SuperD3Hud-Setup.exe` в любую папку (например, в
-   `C:\SuperD3Hud`).
-2. Запустите его. Установщик распакует рядом с собой лаунчер, библиотеки
-   плагинов TurboHUD, компилятор Roslyn, примеры плагинов и настройки по
-   умолчанию, после чего запустит лаунчер.
-3. Дальше всё как обычно: лаунчер сам найдёт Diablo III, а форк TurboHUD
-   работает сразу — плагины `.cs` собираются локально тем компилятором, что
-   лежит рядом.
-
-Установка полностью переносимая: папку можно скопировать на другой компьютер
-и запустить установщик ещё раз. Никаких файлов вне своей папки программа не
-пишет и путей вне неё не использует.
-
-Собрать установщик из исходников:
+To build the self-extracting installer from source:
 
 ```powershell
-cd D:\ARL\th\SuperD3Hud
-.\make-installer.ps1        # соберёт и лаунчер, и SuperD3Hud-Setup.exe
+git clone https://github.com/NiceClown/SuperD3Hud.git
+cd SuperD3Hud
+.\make-installer.ps1
 ```
 
-## Сборка
+## Building from Source
 
 ```powershell
-cd D:\ARL\th\SuperD3Hud
+git clone https://github.com/NiceClown/SuperD3Hud.git
+cd SuperD3Hud
 .\build.ps1
 ```
 
-Готовый файл: `bin\SuperD3Hud.exe`.
+Output binary: `bin\SuperD3Hud.exe`.
 
-Проверки без запуска окна:
+### CLI Diagnostics & Headless Verification
 
-```powershell
-.\bin\SuperD3Hud.exe --selftest      # конфигурация, плагины, макросы, карта
-.\bin\SuperD3Hud.exe --functional    # запись настроек на песочнице
-.\bin\SuperD3Hud.exe --map-check     # снимок карты из запущенной игры
-.\bin\SuperD3Hud.exe --map-preview C:\temp\map   # отрисовка карты в PNG
-.\bin\SuperD3Hud.exe --plugins      # свои плагины: компиляция и запуск
-.\bin\SuperD3Hud.exe --turbohud     # плагины TurboHUD: API, компиляция, отрисовка
-.\bin\SuperD3Hud.exe --turbohud-live  # хост TurboHUD на запущенной игре
-.\bin\SuperD3Hud.exe --describe     # описания всех плагинов HUD
-.\bin\SuperD3Hud.exe --render C:\temp\render     # все вкладки в PNG
-```
-
-Отчёт self-test пишется в `config\selftest.txt`.
-
-## Быстрый старт
-
-Настраивать ничего не нужно.
-
-1. Откройте ярлык **SuperD3Hud** (лежит рядом с папкой программы).
-2. Нажмите **Запустить игру** — или запустите Diablo III как обычно.
-3. Играйте: карта и свои плагины уже работают.
-
-По умолчанию открывается простой режим с пятью разделами: **Обзор**,
-**Карта**, **HUD на экране**, **Плагины**, **Макросы**. Всё остальное —
-профили, настройки HUD, файлы HUD и справка — лежит за галочкой
-**Расширенные настройки** внизу меню. Лаунчер нужен только для
-дополнительных настроек: параметров карты, списка плагинов, макросов и
-профилей. Всё это доступно на соседних вкладках, но необязательно.
-
-При первом запуске программа сама создаёт ярлык, подставляет путь к игре
-и включает карту. Если игра установлена в необычное место — нажмите
-**Найти автоматически** или **Выбрать .exe**.
-
-## Карта
-
-Карта — собственная реализация SuperD3Hud. Она читает сцены и навигационные
-ячейки из памяти игры и рисует их своим оверлеем.
-
-- **Только чтение.** Процесс открывается с `PROCESS_VM_READ`. Память игры не
-  изменяется, код не внедряется, потоки не приостанавливаются.
-- **Проверка сборки.** Перед чтением сверяется SHA-256 клиента и байты
-  итератора сцен. Поддерживается сборка `2.8.0.99920`; на другой версии карта
-  отключается, а не читает память наугад.
-- **Три режима.** Наложение поверх нативной миникарты (не перехватывает клики),
-  отдельная панель, которую можно двигать мышью, и большая карта на весь экран.
-- **Большая карта.** Открывается вместе с большой картой игры по клавише Tab
-  (или принудительно по F9). Наложение центрируется на герое — ровно так же,
-  как карта самой игры — и масштабируется от высоты окна, поэтому совмещение
-  не зависит от разрешения экрана. На вкладке **Карта** можно сдвинуть и
-  изменить масштаб вручную, если в игре выбран другой уровень приближения.
-- **Что показывается.** Геометрия уже загруженных сцен и контур посещённых зон.
-  Полное открытие неисследованных этажей не гарантируется.
-- **Плавное движение.** Позиция игрока читается 60 раз в секунду и
-  интерполируется между отсчётами, позиции монстров и добычи продолжаются
-  между опросами. Метки не дёргаются и не отстают от объектов.
-
-Диагностика: `--map-check` печатает версию клиента, хеш, число сцен, ресурсов и
-ячеек геометрии, а также позицию игрока.
-
-## Оверлей HUD
-
-Собственный HUD SuperD3Hud. Включается на вкладке **Оверлей HUD** и не требует
-стороннего движка.
-
-| Что | Источник данных |
-| --- | --- |
-| Список баффов, стаки, стихия Convention of Elements | память игры, проверенные ключи атрибутов |
-| Здоровье персонажа | память игры |
-| Счётчик рюкзака (занято из 60) | память игры |
-| Элита, боссы, стражи Великого портала | память игры, редкость и SNO актёров |
-| Легендарки, комплекты, древние, первобытные | память игры, качество и ранг предмета |
-| Кулдауны навыков | **память игры**: нужные атрибуты находятся автоматически |
-
-### Кулдауны
-
-Игра хранит кулдаун навыка как пару атрибутов вида
-`(powerSno << 12) | descriptor` — та же схема, что и у иконок баффов. Номера
-дескрипторов нигде не опубликованы, поэтому SuperD3Hud находит их сам:
-
-1. при первом нажатии навыка он запоминает, какие атрибуты появились;
-2. дескриптор, который реагирует на нажатия, принимается за «остаток»,
-   соседний — за «начало»;
-3. пара сохраняется в `settings.ini` и используется дальше.
-
-Так значения читаются напрямую, с учётом снижения перезарядки. Если источник
-ещё не найден, работает запасной вариант — оценка по нажатию клавиши, и в HUD
-она помечена как оценка.
-
-Кнопка **Найти источник заново** сбрасывает пару и запускает поиск повторно.
-Команда `--cooldowns` печатает все атрибуты игрока по дескрипторам — по ней
-видно, какие номера реально используются.
-
-### Клавиши карт
-
-В Diablo III большая карта открывается **Tab**, а карта врат странствий
-(с квестами) — **M**. Наложение показывается только на большой карте: при
-открытии карты врат оно скрывается, чтобы не мешать. Обе клавиши меняются на
-вкладке **Оверлей HUD**.
-
-### Метки добычи
-
-Добыча помечается так же, как в классическом HUD:
-
-- пульсирующий круг на земле, вращающийся треугольник на карте и подпись;
-- легендарка — оранжевая, древняя — ярче и с рамкой, первобытная — с красной
-  рамкой, комплект — зелёный;
-- подпись берётся из таблицы балансов игры, а если имя недоступно — из
-  качества и ранга предмета.
-
-### Честные ограничения
-
-- **Максимум здоровья и ресурсы** (ярость, мана, дисциплина, дух) пока не
-  читаются: их источники не проверены на этой сборке, поэтому вместо выдуманных
-  чисел показывается только то, что известно точно.
-- **Имена предметов** подтягиваются из таблицы балансов игры; если запись
-  недоступна, предмет всё равно показывается по качеству и рангу.
-- Кулдауны — чтение памяти с автоопределением дескрипторов; если игра изменит
-  схему, HUD вернётся к оценке по нажатию и сообщит об этом.
-
-### Проверка на живом клиенте
+All diagnostic checks can run from the command line without opening the GUI:
 
 ```powershell
-.\bin\SuperD3Hud.exe --game-check
+.\bin\SuperD3Hud.exe --selftest             # Verify config, plugins, macros, math, and map rendering
+.\bin\SuperD3Hud.exe --functional           # Sandboxed settings & macro serialization test
+.\bin\SuperD3Hud.exe --map-check            # Inspect live Diablo III scenes, navcells, and player position
+.\bin\SuperD3Hud.exe --map-preview out_map  # Render synthetic minimap/panel/large-map PNGs
+.\bin\SuperD3Hud.exe --hud-preview out_hud  # Render synthetic built-in HUD PNG
+.\bin\SuperD3Hud.exe --plugins              # Compile and execute local SuperD3Hud plugins
+.\bin\SuperD3Hud.exe --turbohud             # Compile TurboHUD plugins and render a test frame
+.\bin\SuperD3Hud.exe --turbohud-live        # Verify TurboHUD API data against running Diablo III
+.\bin\SuperD3Hud.exe --describe             # Dump resolved plugin descriptions
+.\bin\SuperD3Hud.exe --cooldowns            # Dump player actor cooldown attributes
+.\bin\SuperD3Hud.exe --game-check           # Dump live monsters, elites, buffs, health, and backpack
+.\bin\SuperD3Hud.exe --render out_ui        # Render all launcher tabs to PNGs
 ```
 
-Команда печатает игрока, число актёров, элиту и боссов с координатами, активные
-баффы, здоровье и содержимое рюкзака. Если игра не запущена, команда честно
-сообщает об этом.
+`--selftest` writes its detailed report to `bin\config\selftest.txt`.
 
-```powershell
-.\bin\SuperD3Hud.exe --cooldowns
-```
+## Quick Start
 
-Печатает атрибуты игрока по дескрипторам: по этому списку видно, какие номера
-отвечают за кулдауны на вашем клиенте.
+No setup is required out of the box:
 
-```powershell
-.\bin\SuperD3Hud.exe --hud-preview C:\temp\hud
-```
+1. Open **SuperD3Hud** (using `bin\SuperD3Hud.exe` or the desktop shortcut `SuperD3Hud.lnk`).
+2. Click **Запустить игру** (Launch Game) or start Diablo III normally.
+3. Play — the minimap overlay, `Tab` map, TurboHUD plugins, and skill cooldowns connect automatically.
 
-Рисует оверлей с синтетическими данными в PNG, чтобы проверить вёрстку без игры.
+By default, Simple Mode displays the five main sections (**Dashboard**, **Map**, **Screen HUD**, **Plugins**, **Macros**). Enable **Расширенные настройки** (Advanced Settings) at the bottom of the sidebar to unlock Profiles, `hud.ini`, HUD Files, and About.
 
-## Горячие клавиши по умолчанию
+## Map Overlay
 
-| Клавиша | Действие |
-|---------|----------|
-| F1 | Разобрать предметы |
-| Shift+F1 | Куб Канаи: улучшение редких |
-| F2 | Выбросить инвентарь |
-| F3 | Гемблинг |
-| F4 | Спам левой кнопкой |
-| F5 | Открыть Greater Rift |
-| Shift+F5 | Открыть Нефалемский портал (Rift) |
-| Ctrl+F5 | Принять портал (Accept GR) |
-| F6 | Прокачать камни |
-| F7 | Пауза макросов |
-| F8 | Покинуть игру |
+SuperD3Hud reads scene geometry directly from Diablo III memory:
 
-Все клавиши, параметры умной автоматизации (защита Ancient/Primal,
-заблокированные колонки, усиленный ВП, порог гемблинга, стоп при движении мыши)
-и сценарии меняются на вкладке **Макросы**. Горячие клавиши регистрируются через
-`RegisterHotKey`, поэтому работают, даже когда окно лаунчера свёрнуто.
+- **Strictly read-only:** opens the process with `PROCESS_VM_READ` only — never writes memory, injects DLLs, or suspends threads.
+- **Build verification:** checks the executable SHA-256 hash and scene iterator signature (`2.8.0.99920`) before reading pointers, failing closed on mismatched builds.
+- **Three display modes:** native minimap click-through overlay, standalone movable panel, and full-screen `Tab` map (also toggleable via `F9` and automatically hidden when opening the `M` waypoint/bounty map).
+- **60 FPS smoothness:** smooth `Stopwatch`-damped player and marker motion paired with baked seam-free parchment/gold wall silhouettes.
 
-## Сценарии макросов
+## Built-in HUD & Cooldowns
 
-Сценарий — обычный текст, по одной команде на строку. Всё после `#` — комментарий.
+| Feature | Data Source |
+|---|---|
+| Buff list, stack counts, Convention of Elements phase | Game memory (verified attribute keys) |
+| Health & Rift / Greater Rift progress | Game memory (hero attributes & actor/area tracking) |
+| Backpack slot counter (`Used / 60`) | Game memory (`InventoryModule`) |
+| Elites, bosses, affixes, and Rift Guardians | Game memory (rarity, SNO, and power-to-affix mapping) |
+| Legendary / Set / Ancient / Primal ground loot | Game memory (quality, rank, and game balance table names) |
+| Skill cooldowns (`Q W E R` / mouse slots) | Direct memory ticks (`0x272` / `0x252` + equipped SNOs) with keypress fallback |
 
-| Команда | Описание |
-|---------|----------|
-| `FOCUS` | Переключить фокус на окно Diablo III |
-| `MOVE x y` | Переместить курсор (автопривязка по области 2560×1440) |
-| `MOVEL x y` / `MOVER x y` / `MOVEC x y` | Переместить курсор с привязкой к левому / правому краю или центру |
-| `CLICK [right]` / `CLICKR` | Клик левой (или правой) кнопкой |
-| `KEY vk` | Нажать клавишу (виртуальный код или имя: `ENTER`, `ESC`, `F1`, `I`) |
-| `SLEEP ms` | Пауза |
-| `GRID x y dx dy cols rows [key]` | Сетка кликов; после каждого клика дважды нажать `key` |
-| `GRIDDROP x y dx dy cols rows dropX dropY` | Сетка «взять предмет → перетащить в точку сброса» |
-| `SMARTSALVAGE` | Умный разбор у кузнеца по памяти рюкзака и правилам защиты |
-| `OPENGR [empowered]` | Открыть Greater Rift у обелиска (с учётом настройки `EmpoweredGR`) |
-| `OPENRIFT` | Открыть обычный Нефалемский портал у обелиска |
-| `ACCEPTGR` | Принять приглашение в Greater Rift |
-| `GEMUPS [count]` | Прокачать камни у Урши (1–5 раз) |
-| `SMARTGAMBLE [maxClicks]` | Покупка у Кадалы до достижения порога свободных слотов |
-| `SMARTDROP` | Выбросить только незащищённые предметы из разблокированных колонок |
-| `CUBEUPGRADE [maxRuns]` | Улучшение редких предметов в Кубе Канаи |
+### Cooldown Detection
 
-Пример умного разбора предметов:
+Diablo III stores per-skill cooldown end and start ticks using `(powerSno << 12) | descriptor` attributes (`0x272` and `0x252` on 64-bit `2.8.0.99920`, synchronized with the client's internal 60-tick game clock at `root + 0x20`). When exact attributes are not found or a custom client schema differs, the HUD automatically falls back to descriptor auto-discovery and keypress estimation.
 
-```
-FOCUS
-SMARTSALVAGE
-```
+### Current Memory Reader Scope
 
-Координаты в сценариях записываются для клиентской области **2560×1440** и
-автоматически масштабируются под фактическое окно игры с учётом соотношения
-сторон (16:9, 21:9, 16:10), поэтому один и тот же сценарий работает на любом
-разрешении. Сценарии, сохранённые в старом формате 1920×1080, пересчитываются
-при загрузке.
+- **Maximum health and secondary resources** (Fury, Hatred, Discipline, Mana, Spirit, etc.) remain unset (`-1`) unless verified on the target build rather than estimating fake numbers.
+- **Item names** come from the in-memory item balance table and fall back cleanly to item quality/rank labels if unavailable.
 
-### Задержки и рандомизация
+## Default Macro Hotkeys
 
-Задержка между шагами по умолчанию — **1–5 мс**. Значение из настроек берётся
-как среднее, а фактическая пауза выбирается случайно в этом диапазоне, поэтому
-последовательность кликов никогда не повторяется с точностью до миллисекунды.
-Длинные паузы `SLEEP` тоже получают разброс около ±8 %.
+| Hotkey | Action | Description |
+|---|---|---|
+| `F1` | `Salvage` | Smart blacksmith salvage (bulk Common/Magic/Rare + unlocked non-protected Legendaries) |
+| `Shift+F1` | `CubeUpgrade` | Kanai's Cube rare-to-legendary upgrade loop (respects lock columns & item protection) |
+| `F2` | `InvDrop` | Smart inventory drop to ground (`SMARTDROP`), skipping protected items |
+| `F3` | `Gamble` | Rapid Kadala right-click gambling (`SMARTGAMBLE`), stops at free-slot threshold |
+| `F4` | `LeftClick` | Single left-click spam trigger at current cursor position |
+| `F5` | `OpenGR` | Open Greater Rift at the Obelisk (honors `EmpoweredGR` toggle) |
+| `Shift+F5` | `OpenRift` | Open standard Nephalem Rift at the Obelisk |
+| `Ctrl+F5` | `AcceptGR` | Accept Greater Rift entry popup |
+| `F6` | `GemUps` | Click Urshi's Legendary Gem upgrade button (`1–5` times, configurable) |
+| `F7` | `Pause` | Pause / resume macro execution |
+| `F8` | `LeaveGame` | `Esc` -> Leave Game |
 
-Для этого программа на время макроса поднимает разрешение системного таймера
-до 1 мс (`timeBeginPeriod`): иначе Windows округляет любую паузу примерно до
-15 мс и короткая задержка была бы недостижима. Длительность нажатия кнопки мыши
-и клавиши также слегка случайна (примерно 9–21 мс), как при живой игре руками.
+All hotkeys, smart protection toggles (`SmartMode`, `SalvageBulkButtons`, `SalvageLegendaries`, `ProtectAncient`, `ProtectPrimal`, `LockedLeftColumns`, `LockedRightColumns`, `EmpoweredGR`, `GemUpgradeCount`, `GambleStopFreeSlots`, `AbortOnMouseMove`), and custom scripts are editable on the **Macros** tab.
 
-Проверка: `--selftest` печатает среднюю паузу и подтверждает, что она остаётся
-в диапазоне 1–5 мс.
+## Macro Script DSL
 
-## Плагины
+Scripts are plain text, one command per line (`#` starts a comment). Reference coordinates use a **2560×1440** client area and automatically scale across arbitrary resolutions and aspect ratios (`16:9`, `16:10`, `21:9`). Legacy `1920×1080` scripts are migrated automatically on load.
 
-- Списки: **Плагины SuperD3Hud**, **Плагины TurboHUD** и **Движок HUD**. В
-  каждом есть поиск по названию и описанию, галочка включения в строке и
-  подсказка с полным описанием плагина.
-- Включение/отключение — это перенос файла между `plugins` и
-  `plugins.disabled`. Движок компилирует все `.cs` из `plugins` при старте,
-  поэтому отключённые плагины просто не попадают в сборку.
-- Импорт копирует выбранные `.cs` в `plugins\User`.
-- Заметки хранятся в `config\plugin_notes.json`.
-- Локальные JSON-настройки — в `config\plugin_settings\`.
-- Закрытые плагины лаунчер не трогает: он работает только с открытыми `.cs`.
+| Command | Description |
+|---|---|
+| `FOCUS` | Bring the Diablo III window into focus |
+| `MOVE x y` | Move cursor using automatic 2560×1440 region mapping |
+| `MOVEL x y` / `MOVER x y` / `MOVEC x y` | Move cursor anchored to left edge / right edge / screen center |
+| `CLICK [right]` / `CLICKR` | Left-click (or right-click) at current cursor position |
+| `KEY vk` | Press virtual key code or name (`ENTER`, `ESC`, `F1`, `I`, etc.) |
+| `SLEEP ms` | Sleep with ±8% humanized jitter |
+| `GRID x y dx dy cols rows [key]` | Click a grid of cells, optionally double-pressing `key` after each |
+| `GRIDDROP x y dx dy cols rows dropX dropY` | Pick up each cell in a grid and drop at `(dropX, dropY)` |
+| `SMARTSALVAGE` | Smart blacksmith salvage using live inventory memory and lock/rarity protection |
+| `OPENGR [empowered]` | Open Greater Rift at Obelisk (uses `EmpoweredGR` or optional argument) |
+| `OPENRIFT` | Open Nephalem Rift at Obelisk |
+| `ACCEPTGR` | Click the centered Greater Rift Accept button |
+| `GEMUPS [count]` | Perform `count` (1–5) Urshi gem upgrades |
+| `SMARTGAMBLE [maxClicks]` | Right-click at cursor until `FreeSlots <= GambleStopFreeSlots` |
+| `SMARTDROP` | Drop only unlocked, non-protected items from backpack |
+| `CUBEUPGRADE [maxRuns]` | Automate Kanai's Cube rare upgrades with item protection |
 
-## Совместимость с плагинами TurboHUD
+### Humanized Timing & Safety
 
-Начиная с версии **1.5.0** в SuperD3Hud встроен собственный хост публичного
-plugin-API TurboHUD. Он не использует `TurboHUD.exe`, не расшифровывает `.x` и
-не обходит проверки лицензий.
+- Default inter-step delay is **1–5 ms** randomized around the configured average (`timeBeginPeriod(1)` is enabled during active macros so Windows honors sub-15 ms sleeps; mouse and key hold durations vary naturally between ~9–21 ms).
+- Press `Esc` or move the cursor > `180 px` from the macro position to abort any running loop immediately.
 
-- **Своя сборка API.** `Turbo.Plugins.dll` собирается из открытых исходников
-  интерфейсов (`compat\interfaces`, 160 файлов). Это только контракт API:
-  никаких бинарников движка. Рядом лежат открытые библиотеки SharpDX (MIT) —
-  это типы, которыми API описывает рисование.
-- **Своя база плагинов.** `Turbo.Plugins.Default.dll` содержит совместимый
-  класс `BasePlugin` (C# 5), поэтому плагины, написанные для TurboHUD,
-  компилируются без изменений.
-- **Папка `plugins-turbohud`.** Любой `.cs`-файл из неё компилируется при
-  старте и получает настоящий `IController`: `Game`, `Render`, `Sno`,
-  `Inventory`, `Input`, `Queue`, `SceneReveal`, `Avoidance`, `Interaction`,
-  `Target`, `ActorQuery`, `Window`, `Time`, `Sound`, `Tracker`, `TextLog`.
-- **Хуки.** Поддерживаются `IAfterCollectHandler`, `IBeforeRenderHandler`,
-  `IInGameTopPainter` и `IInGameWorldPainter`; они вызываются в том же порядке,
-  что и в оригинальном HUD. Рисование идёт на том же прозрачном оверлее, что и
-  встроенный HUD.
-- **Данные.** Актёры, монстры, добыча, баффы, навыки, здоровье и рюкзак берутся
-  из собственных ридеров SuperD3Hud. Чего хост пока не читает (квесты, святилища,
-  порталы, статистика героя), тот возвращает безопасные значения по умолчанию,
-  поэтому плагин не падает, а просто показывает меньше.
-- **Описания.** У каждого плагина есть человекочитаемое описание: свойство
-  `Description`, если оно есть, иначе имя класса.
-- **Проверка.** `--turbohud` компилирует папку, печатает список плагинов и
-  рисует один кадр в тестовом состоянии.
+## TurboHUD Plugin API Compatibility
 
-В папке `plugins-turbohud` лежит короткая инструкция и `readme.txt`; плагины
-добавляются туда вручную. Примеры по этапам API (`Stage1Demo.cs` …
-`Stage4Demo.cs`, `SuperD3HudStatusPlugin.cs`) лежат рядом с программой в
-`examples\turbohud` — скопируйте нужный файл в `plugins-turbohud`, чтобы
-включить его. Примеры показывают возможности каждого этапа и не пишут ничего
-поверх игры, пока вы сами их не добавите.
+SuperD3Hud embeds an independent compatibility layer (`Turbo.Plugins.dll` built from the open `compat/interfaces` definitions + `Turbo.Plugins.Default.dll` built from open `BasePlugin`/default helpers):
 
-## HUD-движок
+- Compiles user `.cs` plugins placed in `plugins-turbohud\` locally using Roslyn at startup.
+- Supports `IAfterCollectHandler`, `IBeforeRenderHandler`, `IInGameTopPainter`, and `IInGameWorldPainter`.
+- Provides `IController` implementations (`Game`, `Render`, `Sno`, `Inventory`, `Input`, `Queue`, `SceneReveal`, `Avoidance`, `Interaction`, `Target`, `ActorQuery`, `Window`, `Time`, `Sound`, `Tracker`, `TextLog`) backed by SuperD3Hud's read-only snapshots.
+- Sample API plugins (`Stage1Demo.cs` – `Stage4Demo.cs`, `SuperD3HudStatusPlugin.cs`) ship in `examples/turbohud/`.
 
-Лаунчер не зависит от конкретного движка:
+## Project Structure
 
-- папка движка ищется автоматически, но её можно указать вручную;
-- можно указать конкретный `.exe`, если файл называется иначе;
-- поддерживаются два режима запуска: напрямую и через загрузчик;
-- если движок отказался стартовать без своего загрузчика, лаунчер это
-  распознаёт и предлагает переключить режим.
-
-## Структура проекта
-
-```
+```text
 SuperD3Hud/
-  build.ps1            сборка через csc.exe (.NET Framework 4.8)
-  make-installer.ps1   сборка переносимого установщика SuperD3Hud-Setup.exe
+  build.ps1                Compiles SuperD3Hud.exe via .NET Framework 4.x csc.exe
+  make-installer.ps1       Builds portable SuperD3Hud-Setup.exe
   installer/
-    Setup.cs           установщик: распаковка архива рядом с собой
+    Setup.cs               Self-extracting portable installer source
   src/
-    Program.cs          точка входа, self-test, map-check, рендер
-    AppPaths.cs         поиск путей, настройки лаунчера
-    HudEngine.cs        поиск и распознавание HUD-движка
-    IniFile.cs          чтение/запись INI с сохранением комментариев
-    Models.cs           модели макросов и настройки по умолчанию
-    JsonStore.cs        JSON-хранилище
-    InputSender.cs      Win32 ввод и геометрия окна игры
-    MacroEngine.cs      парсер и исполнитель сценариев
-    HotkeyManager.cs    глобальные горячие клавиши
-    PluginManager.cs    сканирование и переключение плагинов
-    ProcessRunner.cs    запуск игры/HUD, ремонт app.config
-    ProfileManager.cs   zip-профили
-    GameMemory.cs       read-only чтение памяти процесса
-    MapReader.cs        сцены, ресурсы и кэш раскрытых зон
-    MapGeometry.cs      кватернионы, проекция, позиция игрока
-    MapService.cs       фоновый цикл захвата карты
-    MapOverlay.cs       layered-окно с наложением карты
-    MapTests.cs         тесты геометрии и отрисовки
-    Ui.cs               тёмная тема и общие контролы
-    MainForm.cs         окно, навигация, трей
-    DashboardPage.cs    обзор
-    MapPage.cs          настройки карты
-    HudPage.cs          настройки hud.ini
-    HudFilesPage.cs     config.xml, hotkeys.xml, pickit
-    PluginsPage.cs      менеджер плагинов
-    MacrosPage.cs       макросы
-    ProfilesPage.cs     профили
-    AboutPage.cs        о программе
-    turbohost/          реализация публичного plugin-API TurboHUD
-    turbohud/           загрузчик и рантайм плагинов TurboHUD
-  compat/               исходники интерфейсов API и сборка Turbo.Plugins.dll
-  tools/                генераторы каталогов и проверка текста
-  bin/                  результат сборки
-  config/               создаётся при первом запуске
+    Program.cs             Entry point, CLI diagnostics, --selftest & --render
+    AppPaths.cs            Path resolution and persistent settings.ini
+    HudEngine.cs           External HUD engine discovery & status checks
+    IniFile.cs             Comment-preserving INI reader/writer
+    Models.cs              Macro settings, hotkeys, and smart automation defaults
+    JsonStore.cs           Safe JSON load/save helpers
+    InputSender.cs         Win32 input synthesis, cursor/window geometry helpers
+    MacroEngine.cs         Macro DSL parser, aspect-aware scaling, smart execution
+    HotkeyManager.cs       Global RegisterHotKey management
+    PluginManager.cs       Plugin scanning and enable/disable management
+    ProcessRunner.cs       Process launch & app.config Roslyn repair
+    ProfileManager.cs      Local ZIP settings profiles
+    GameMemory.cs          Read-only PROCESS_VM_READ process wrapper
+    MapReader.cs           Scene, navcell asset, and reveal-cache reader
+    MapGeometry.cs         Quaternion transforms, isometric projection, player reader
+    MapService.cs          Background map capture service with persistent asset cache
+    MapOverlay.cs          Layered 60 FPS parchment/gold silhouette & marker overlay
+    MapTests.cs            Geometry, visual style, and projection tests
+    LargeMapTracker.cs     Low-level keyboard hook & Tab/M large map tracker
+    Ui.cs                  Obsidian & bronze-gold Diablo theme and shared controls
+    MainForm.cs            Main launcher window, navigation, tray icon, 60 Hz tick
+    DashboardPage.cs       Dashboard tab
+    MapPage.cs             Map configuration tab
+    HudPage.cs             hud.ini editor tab
+    HudFilesPage.cs        config.xml, hotkeys.xml, pickit editor tab
+    PluginsPage.cs         Plugin manager tab
+    MacrosPage.cs          Hotkeys, smart automation settings, and script editor tab
+    ProfilesPage.cs        Profile import/export tab
+    AboutPage.cs           About & GitHub release updater tab
+    game/                  Actor, Buff, Cooldown, Damage, Inventory, Skill & HudOverlay
+    plugins/               Local HudPlugin compiler & runtime
+    turbohost/             TurboHUD public API controller implementations
+    turbohud/              TurboHUD plugin compiler & frame runtime
+  compat/
+    interfaces/            Public Turbo.Plugins interface definitions
+    baseplugin/            BasePlugin & ValueFormat sources
+    sharpdx/               Bundled SharpDX assemblies (MIT)
+    build-api.ps1          Builds Turbo.Plugins.dll
+    build-default.ps1      Builds Turbo.Plugins.Default.dll
+  examples/turbohud/       Reference plugin examples
+  tools/                   Catalogue/stub generators and verification scripts
 ```
 
-В `bin\plugins-turbohud` лежат `.cs`-плагины TurboHUD, в `bin\plugins-local` —
-собственные плагины SuperD3Hud.
+## Security & Disclaimers
 
-## Безопасность и ограничения
+- SuperD3Hud contains **no** license bypasses, memory writes, DLL injection, or binary patches.
+- Protected third-party HUD engines refuse direct startup without their own loader; SuperD3Hud detects this and does not attempt to bypass it.
+- Macros send synthetic keyboard/mouse input to the active window. Use them responsibly and at your own risk.
+- Some antivirus tools flag unsigned utilities that synthesize input or use `ReadProcessMemory`; all source code is open in `src/` so you can inspect and compile everything yourself.
 
-- Лаунчер не содержит кода обхода лицензий и не модифицирует бинарники
-  сторонних программ или Diablo III.
-- Защищённые сборки HUD-движков запускаются только через свой загрузчик. При
-  прямом старте такой движок пишет в `logs\status.txt` «wrong setup» и
-  завершается — SuperD3Hud это распознаёт и предлагает перейти в режим
-  «Официальный загрузчик». Обхода этой защиты здесь нет и не будет.
-- Все остальные функции (карта, файлы HUD, плагины, макросы, профили) работают
-  без запуска движка и без сети.
-- Макросы отправляют ввод в активное окно. Используйте их осознанно и в рамках
-  правил игры; автор лаунчера не несёт ответственности за последствия.
-- Антивирус может реагировать на любые программы, эмулирующие ввод. Добавьте
-  папку лаунчера в исключения, если доверяете коду (он полностью открыт в `src`).
+## Updates & Shortcut
 
-## Обновления
+- **GitHub Updates:** Go to **О программе** (About), enter `NiceClown/SuperD3Hud` in **Репозиторий обновлений**, and click **Проверить сейчас**, or run `.\bin\SuperD3Hud.exe --check-updates owner/repo`.
+- **Desktop / Folder Shortcut:** `SuperD3Hud.lnk` with the embedded icon is created automatically next to the program folder on startup and can be recreated from the About tab.
 
-Лаунчер умеет проверять новые релизы на GitHub и делает это автоматически при
-запуске.
+## License
 
-1. Откройте вкладку **О программе**.
-2. В поле **Репозиторий обновлений** укажите `owner/repo`, например
-   `my-name/SuperD3Hud`.
-3. Нажмите **Проверить сейчас**.
-
-Если версия новее, на вкладке **Обзор** появляется карточка с кнопкой
-**Скачать обновление**. Проверка идёт в фоне, не блокирует работу и молча
-пропускается, если сети нет.
-
-Проверка из командной строки:
-
-```powershell
-.\bin\SuperD3Hud.exe --check-updates owner/repo
-```
-
-## Ярлык
-
-Ярлык `SuperD3Hud.lnk` создаётся автоматически при первом запуске и кладётся
-рядом с папкой программы. Он использует встроенную иконку приложения, поэтому
-его легко найти среди других файлов. Пересоздать ярлык можно кнопкой
-**Создать ярлык** на вкладке **О программе**.
-
-## Лицензия
-
-Код лаунчера — MIT (см. `LICENSE`). Сторонние программы (HUD-движки, GodTool,
-Diablo III) принадлежат их правообладателям и в этот проект не входят.
+Source code of SuperD3Hud is licensed under the **MIT License** (see [LICENSE](LICENSE)). Third-party tools and game clients (Diablo III, external HUD engines) belong to their respective owners and are not included in this repository.
